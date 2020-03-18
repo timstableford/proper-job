@@ -1,23 +1,14 @@
-export interface ExecutorConfig {
-  parallel?: number;
-  continueOnError?: boolean;
-  storeOutput?: boolean;
-  throwOnError?: boolean;
-}
+import { ExecutorCallback, ExecutorConfig, ExecutorResults } from './api-types';
+import { ExecutorError } from './executor-error';
+import { ExecutorPromise } from './executor-promise';
 
-export interface ExecutorResults<K, V> {
-  results: Map<K, V>;
-  errors: Map<K, Error>;
-  fulfilled: number;
-}
-
-export type ExecutorCallback<K, V> = (value: K) => Promise<V>;
+export { ExecutorPromise, ExecutorError, ExecutorConfig, ExecutorResults, ExecutorCallback };
 
 interface ExecutorOptions<K, V> extends ExecutorConfig {
   iterable: Iterable<K>;
   callback: ExecutorCallback<K, V>;
-  resolve: (results: ExecutorResults<K, V>) => void;
-  reject?: (results: ExecutorResults<K, V>) => void;
+  resolve: (results: ExecutorResults<V>) => void;
+  reject?: (error: ExecutorError<V>) => void;
 }
 
 const DEFAULT_CONFIG = {
@@ -36,9 +27,9 @@ function conf<T>(defaultValue: T, value?: T): T {
 
 class ParallelExecutor<K, V> {
   private options: ExecutorOptions<K, V>;
-  private results: ExecutorResults<K, V> = {
-    results: new Map(),
-    errors: new Map(),
+  private results: ExecutorResults<V> = {
+    results: [],
+    errors: [],
     fulfilled: 0,
   };
   private running = 0;
@@ -53,10 +44,15 @@ class ParallelExecutor<K, V> {
     }
   }
 
+  public abort(): void {
+    this.results.aborted = true;
+  }
+
   public fill(): void {
     const parallel = this.options.parallel || DEFAULT_CONFIG.parallel;
     const continueOnError = conf(DEFAULT_CONFIG.continueOnError, this.options.continueOnError);
-    const shouldContinue = continueOnError || this.results.errors.size === 0;
+    const shouldContinue =
+      (continueOnError || this.results.errors.length === 0) && !this.results.aborted;
 
     if (shouldContinue) {
       while (this.running < parallel) {
@@ -64,15 +60,15 @@ class ParallelExecutor<K, V> {
         if (iteratorValue.done) {
           break;
         }
-        this.wrap(iteratorValue.value, this.start(iteratorValue.value));
+        this.wrap(this.start(iteratorValue.value));
       }
     }
 
     if (this.running === 0) {
       const throwOnError = conf(DEFAULT_CONFIG.throwOnError, this.options.throwOnError);
 
-      if (throwOnError && this.results.errors.size > 0 && this.options.reject) {
-        this.options.reject(this.results);
+      if (throwOnError && this.results.errors.length > 0 && this.options.reject) {
+        this.options.reject(new ExecutorError(this.results));
       } else {
         this.options.resolve(this.results);
       }
@@ -89,17 +85,17 @@ class ParallelExecutor<K, V> {
     }
   }
 
-  private wrap(key: K, promise: Promise<V>): void {
+  private wrap(promise: Promise<V>): void {
     const store = conf(DEFAULT_CONFIG.storeOutput, this.options.storeOutput);
     promise
       .then(result => {
         if (store && result !== undefined) {
-          this.results.results.set(key, result);
+          this.results.results.push(result);
         }
         this.results.fulfilled++;
       })
       .catch(error => {
-        this.results.errors.set(key, error);
+        this.results.errors.push(error);
       })
       .finally(() => {
         this.running--;
@@ -108,19 +104,24 @@ class ParallelExecutor<K, V> {
   }
 }
 
-export async function execute<K, V = void>(
+export function execute<K, V = void>(
   iterable: Iterable<K>,
   callback: ExecutorCallback<K, V>,
   options: ExecutorConfig = {},
-): Promise<ExecutorResults<K, V>> {
-  return new Promise<ExecutorResults<K, V>>((resolve, reject) => {
-    const executor = new ParallelExecutor({
-      resolve,
-      reject,
-      iterable,
-      callback,
-      ...options,
-    });
-    executor.fill();
-  });
+): ExecutorPromise<ExecutorResults<V>> {
+  const promise: ExecutorPromise<ExecutorResults<V>> = new ExecutorPromise<ExecutorResults<V>>(
+    (resolve, reject) => {
+      const executor = new ParallelExecutor({
+        resolve,
+        reject,
+        iterable,
+        callback,
+        ...options,
+      });
+      executor.fill();
+      return () => executor.abort();
+    },
+  );
+
+  return promise;
 }
