@@ -12,12 +12,12 @@ If you have 10,000 items that need to be processed asyncronously that take vario
 - Why not Promise.allSettled?
   - If you're in an older NodeJS version or have a lot of things you need to do in parallel.
   - You could split it into segments of X size and run Promise.allSettled in a loop but that doesn't
-    take into account some tasks being quicker than others. This library ensured X jobs are always running.
+    take into account some tasks being quicker than others. This library ensures X jobs are always running.
 
 ## Features
 
 - Works on any iterable including maps, arrays and Mongo cursors.
-- It will run as many promises in parallel as you let it. If one finishes sooner it will start another.
+- It will run as many promises in parallel as you let it. If one finishes it will start another to keep it at the maximum allowed.
 - It supports aborting mid-way through. This will wait for any running promises to finish and then return.
 - TypeScript definitions.
 - Unit tests.
@@ -52,8 +52,8 @@ The `execute` function is the main entry-point to this library.
 The arguments are as follows:
 
 - An iterable, eg an array, a map etc.
-- A callback to do some promising. The callbacks argument is a single value from the input and it must return a Promise.
-- An optional options object (see below - `ExecutorConfig`).
+- A callback to do some work. The callbacks argument is a single value from the input and it must return a Promise.
+- An optional options object (`ExecutorConfig`).
 
 It returns an `ExecutorPromise` on success. This is an extension of a normal Promise that contains an additional `abort()` function. Call this to ask `execute` to gracefully exit. Once the promise resolves it will return an `ExecutorResults` object. If an error occurs it throws an `ExecutorError`, this contains a field called `result` which is an `ExecutorResults` object.
 
