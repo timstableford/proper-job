@@ -2,6 +2,7 @@
   "name": "proper-job",
   "version": "1.0.0",
   "description": "Asyncronous task parallel batcher",
+  "repository": "https://github.com/timstableford/proper-job",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Tim Stableford",
