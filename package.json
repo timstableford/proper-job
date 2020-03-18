@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Asyncronous task parallel batcher",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "author": "Tim Stableford",
   "license": "MIT",
   "scripts": {
@@ -12,6 +13,12 @@
     "fix": "./node_modules/@luvies/config/scripts/lint.sh fix",
     "test": "mocha --recursive dist/test"
   },
+  "files": [
+    "dist/*.d.ts",
+    "dist/*.js",
+    "package.json",
+    "README.md"
+  ],
   "devDependencies": {
     "@luvies/config": "^2.0.4",
     "@types/chai": "^4.2.11",
