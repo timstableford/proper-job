@@ -216,4 +216,43 @@ describe('Tests', () => {
     expect(result.fulfilled).to.equal(0);
     expect(result.errors.length).to.equal(1);
   });
+
+  it('init option', async () => {
+    let initCalled = false;
+    await execute(
+      [1],
+      () => {
+        expect(initCalled).to.equal(true);
+        return Promise.resolve();
+      },
+      {
+        init: () => {
+          initCalled = true;
+          return Promise.resolve();
+        },
+      },
+    );
+
+    expect(initCalled).to.equal(true);
+  });
+
+  it('init throws error', async () => {
+    let initCalled = false;
+    const result = await execute(
+      [1],
+      () => {
+        return Promise.reject(new Error('Should not be called since init failed'));
+      },
+      {
+        init: () => {
+          initCalled = true;
+          return Promise.reject(new Error());
+        },
+        throwOnError: false,
+      },
+    );
+
+    expect(initCalled).to.equal(true);
+    expect(result.errors.length).to.equal(1);
+  });
 });

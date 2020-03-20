@@ -48,7 +48,21 @@ class ParallelExecutor<K, V> {
     this.results.aborted = true;
   }
 
-  public fill(): void {
+  public begin(): void {
+    if (this.options.init) {
+      this.options
+        .init()
+        .catch(err => {
+          this.options.continueOnError = false;
+          this.results.errors.push(err);
+        })
+        .finally(() => this.fill());
+    } else {
+      this.fill();
+    }
+  }
+
+  private fill(): void {
     const parallel = this.options.parallel || DEFAULT_CONFIG.parallel;
     const continueOnError = conf(DEFAULT_CONFIG.continueOnError, this.options.continueOnError);
     const shouldContinue =
@@ -118,7 +132,7 @@ export function execute<K, V = void>(
         callback,
         ...options,
       });
-      executor.fill();
+      executor.begin();
       return () => executor.abort();
     },
   );

@@ -3,6 +3,7 @@ export interface ExecutorConfig {
   continueOnError?: boolean;
   storeOutput?: boolean;
   throwOnError?: boolean;
+  init?: () => Promise<void>;
 }
 
 export interface ExecutorResults<V> {
