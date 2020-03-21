@@ -217,42 +217,101 @@ describe('Tests', () => {
     expect(result.errors.length).to.equal(1);
   });
 
-  it('init option', async () => {
+  it('iterable promise (callback)', async () => {
     let initCalled = false;
     await execute(
-      [1],
+      () => {
+        initCalled = true;
+        return Promise.resolve([1]);
+      },
       () => {
         expect(initCalled).to.equal(true);
         return Promise.resolve();
-      },
-      {
-        init: () => {
-          initCalled = true;
-          return Promise.resolve();
-        },
       },
     );
 
     expect(initCalled).to.equal(true);
   });
 
-  it('init throws error', async () => {
+  it('iterable promise throws error (callback)', async () => {
     let initCalled = false;
     const result = await execute(
-      [1],
+      () => {
+        initCalled = true;
+        throw new Error();
+      },
       () => {
         return Promise.reject(new Error('Should not be called since init failed'));
       },
       {
-        init: () => {
-          initCalled = true;
-          return Promise.reject(new Error());
-        },
         throwOnError: false,
       },
     );
 
     expect(initCalled).to.equal(true);
     expect(result.errors.length).to.equal(1);
+  });
+
+  it('iterable promise rejects (callback)', async () => {
+    let initCalled = false;
+    const result = await execute(
+      () => {
+        initCalled = true;
+        return Promise.reject(new Error());
+      },
+      () => {
+        return Promise.reject(new Error('Should not be called since init failed'));
+      },
+      {
+        throwOnError: false,
+      },
+    );
+
+    expect(initCalled).to.equal(true);
+    expect(result.errors.length).to.equal(1);
+  });
+
+  it('iterable promise', async () => {
+    const promiseIterator = Promise.resolve([1]);
+
+    const result = await execute(promiseIterator, () => {
+      return Promise.resolve();
+    });
+
+    expect(result.fulfilled).to.equal(1);
+  });
+
+  it('iterable promise rejection', async () => {
+    const promiseIterator = Promise.reject(new Error());
+
+    const result = await execute(
+      promiseIterator,
+      () => {
+        return Promise.resolve();
+      },
+      { throwOnError: false },
+    );
+
+    expect(result.fulfilled).to.equal(0);
+    expect(result.errors.length).to.equal(1);
+  });
+
+  it('iterable promise (callback) with init and sleep', async () => {
+    const result = await execute(
+      async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return {
+          init: 'some arbitrary data',
+          iterable: [1],
+        };
+      },
+      async (value, init) => {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(value).to.equal(1);
+        expect(init).to.equal('some arbitrary data');
+      },
+    );
+
+    expect(result.fulfilled).to.equal(1);
   });
 });

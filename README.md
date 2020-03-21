@@ -22,11 +22,13 @@ If you have 10,000 items that need to be processed asyncronously that take vario
 - TypeScript definitions.
 - Unit tests.
 
-## Example
+## Examples
+
+### Simple Iteration
 
 ```
-import { execute } from 'proper-job';
-// Or const execute = require('proper-job').execute;
+const execute = require('proper-job').execute;
+// Or in TypeScript, import { execute } from 'proper-job';
 
 async function main() {
     const things = ['thing1', 10, 20, 30, 40, 50, 'thing2'];
@@ -45,14 +47,50 @@ main().catch(err => {
 });
 ```
 
+### Iteration with init
+
+```
+const execute = require('proper-job').execute;
+// Or in TypeScript, import { execute } from 'proper-job';
+
+async function main() {
+    const initFunction = ;
+
+    const results = await execute(async () => {
+        // Do some async thing.
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // Then return an object with the init field.
+        return {
+            init: 'Some arbitrary init data, can be an object',
+            iterable: [1, 2, 4]
+        };
+    }, (value, init) => {
+        // Do some processing.
+        // init is set to the same value as returned above.
+        return Promise.resolve(`${init} ${value} done`);
+    }, {
+        parallel: 2 // The number of promises to run in parallel.
+    })
+    console.log(results);
+}
+
+main().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
+```
+
 ## API
 
 The `execute` function is the main entry-point to this library.
 
 The arguments are as follows:
 
-- An iterable, eg an array, a map etc.
+- An iterable, eg an array, a map etc. Or a promise of one, or a callback that returns a promise of one.
+  Or even a callback that returns a promise of `ExecutorInit`.
 - A callback to do some work. The callbacks argument is a single value from the input and it must return a Promise.
+  Note that if your iterable input returned an `ExecutorInit` the second argument will be the `init` field returned
+  from the first call.
 - An optional options object (`ExecutorConfig`).
 
 It returns an `ExecutorPromise` on success. This is an extension of a normal Promise that contains an additional `abort()` function. Call this to ask `execute` to gracefully exit. Once the promise resolves it will return an `ExecutorResults` object. If an error occurs it throws an `ExecutorError`, this contains a field called `result` which is an `ExecutorResults` object.
@@ -69,6 +107,15 @@ The executor results object contains the following fields:
 ### ExecutorPromise
 
 Returned by `execute()`. A sub-class of Promise that has a function called `abort`.
+
+### ExecutorInit
+
+You may need to do some initialisation before running your job. If your first argument to `execute` is an `ExecutorInit`, or a promise of one then the `init` field returned in that structure will be passed as the second result of the executors callback.
+
+A structure that contains two fields:
+
+- `init` - An arbitrary user specified data-strucutre.
+- `iterable` - The Iterable to iterate on.
 
 ### ExecutorError
 

@@ -3,7 +3,6 @@ export interface ExecutorConfig {
   continueOnError?: boolean;
   storeOutput?: boolean;
   throwOnError?: boolean;
-  init?: () => Promise<void>;
 }
 
 export interface ExecutorResults<V> {
@@ -13,4 +12,16 @@ export interface ExecutorResults<V> {
   aborted?: boolean;
 }
 
-export type ExecutorCallback<K, V> = (value: K) => Promise<V>;
+export interface ExecutorInit<K, T> {
+  iterable: Iterable<K>;
+  init: T;
+}
+
+export type ExecutorInitResult<K, T> = Iterable<K> | ExecutorInit<K, T>;
+
+export type ExecutorCallback<K, V, T> = (value: K, init?: T) => Promise<V>;
+export type ExecutorIterableFunction<K, T> = () => Promise<ExecutorInitResult<K, T>>;
+export type ExecutorIterable<K, T> =
+  | Promise<ExecutorInitResult<K, T>>
+  | ExecutorInitResult<K, T>
+  | ExecutorIterableFunction<K, T>;

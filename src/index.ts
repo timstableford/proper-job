@@ -1,12 +1,26 @@
-import { ExecutorCallback, ExecutorConfig, ExecutorResults } from './api-types';
+import {
+  ExecutorCallback,
+  ExecutorConfig,
+  ExecutorInit,
+  ExecutorIterable,
+  ExecutorResults,
+} from './api-types';
 import { ExecutorError } from './executor-error';
 import { ExecutorPromise } from './executor-promise';
 
-export { ExecutorPromise, ExecutorError, ExecutorConfig, ExecutorResults, ExecutorCallback };
+export {
+  ExecutorPromise,
+  ExecutorError,
+  ExecutorConfig,
+  ExecutorResults,
+  ExecutorCallback,
+  ExecutorIterable,
+  ExecutorInit,
+};
 
-interface ExecutorOptions<K, V> extends ExecutorConfig {
-  iterable: Iterable<K>;
-  callback: ExecutorCallback<K, V>;
+interface ExecutorOptions<K, V, T> extends ExecutorConfig {
+  iterable: ExecutorIterable<K, T>;
+  callback: ExecutorCallback<K, V, T>;
   resolve: (results: ExecutorResults<V>) => void;
   reject?: (error: ExecutorError<V>) => void;
 }
@@ -25,19 +39,19 @@ function conf<T>(defaultValue: T, value?: T): T {
   return defaultValue;
 }
 
-class ParallelExecutor<K, V> {
-  private options: ExecutorOptions<K, V>;
+class ParallelExecutor<K, V, T> {
+  private options: ExecutorOptions<K, V, T>;
   private results: ExecutorResults<V> = {
     results: [],
     errors: [],
     fulfilled: 0,
   };
   private running = 0;
-  private iterator: Iterator<K>;
+  private iterator?: Iterator<K>;
+  private init?: T;
 
-  public constructor(options: ExecutorOptions<K, V>) {
+  public constructor(options: ExecutorOptions<K, V, T>) {
     this.options = options;
-    this.iterator = options.iterable[Symbol.iterator]();
 
     if (!this.options.resolve) {
       throw new Error('resolve must be in options');
@@ -49,17 +63,41 @@ class ParallelExecutor<K, V> {
   }
 
   public begin(): void {
-    if (this.options.init) {
-      this.options
-        .init()
-        .catch(err => {
-          this.options.continueOnError = false;
-          this.results.errors.push(err);
-        })
-        .finally(() => this.fill());
-    } else {
-      this.fill();
+    if (!this.options.iterable) {
+      this.options.continueOnError = false;
+      this.results.errors.push(new Error('Iterable not set'));
+      return;
     }
+
+    if (typeof this.options.iterable === 'function') {
+      try {
+        this.options.iterable = this.options.iterable();
+      } catch (err) {
+        this.options.iterable = Promise.reject(err);
+      }
+    } else {
+      this.options.iterable = Promise.resolve(this.options.iterable);
+    }
+
+    this.options.iterable
+      .then(iterable => {
+        if (iterable) {
+          if ((iterable as Iterable<K>)[Symbol.iterator]) {
+            this.iterator = (iterable as Iterable<K>)[Symbol.iterator]();
+          } else {
+            this.iterator = (iterable as ExecutorInit<K, T>).iterable[Symbol.iterator]();
+            this.init = (iterable as ExecutorInit<K, T>).init;
+          }
+        } else {
+          this.options.continueOnError = false;
+          this.results.errors.push(new Error('Iterator returned void'));
+        }
+      })
+      .catch(err => {
+        this.options.continueOnError = false;
+        this.results.errors.push(err);
+      })
+      .finally(() => this.fill());
   }
 
   private fill(): void {
@@ -69,7 +107,7 @@ class ParallelExecutor<K, V> {
       (continueOnError || this.results.errors.length === 0) && !this.results.aborted;
 
     if (shouldContinue) {
-      while (this.running < parallel) {
+      while (this.running < parallel && this.iterator) {
         const iteratorValue = this.iterator.next();
         if (iteratorValue.done) {
           break;
@@ -91,7 +129,7 @@ class ParallelExecutor<K, V> {
 
   private start(value: K): Promise<V> {
     try {
-      return this.options.callback(value);
+      return this.options.callback(value, this.init);
     } catch (err) {
       return Promise.reject(err);
     } finally {
@@ -118,9 +156,9 @@ class ParallelExecutor<K, V> {
   }
 }
 
-export function execute<K, V = void>(
-  iterable: Iterable<K>,
-  callback: ExecutorCallback<K, V>,
+export function execute<K, V = void, T = void>(
+  iterable: ExecutorIterable<K, T>,
+  callback: ExecutorCallback<K, V, T>,
   options: ExecutorConfig = {},
 ): ExecutorPromise<ExecutorResults<V>> {
   const promise: ExecutorPromise<ExecutorResults<V>> = new ExecutorPromise<ExecutorResults<V>>(
