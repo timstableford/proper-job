@@ -1,6 +1,6 @@
 {
   "name": "proper-job",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Asyncronous task parallel batcher",
   "repository": "https://github.com/timstableford/proper-job",
   "main": "dist/index.js",

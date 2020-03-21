@@ -122,7 +122,7 @@ class ParallelExecutor<K, V, T> {
     if (this.running === 0) {
       if (this.options.teardown) {
         try {
-          Promise.resolve(this.options.teardown())
+          Promise.resolve(this.options.teardown(this.init))
             .catch(err => {
               this.results.errors.push(err);
             })

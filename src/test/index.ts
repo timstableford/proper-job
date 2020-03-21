@@ -331,6 +331,23 @@ describe('Tests', () => {
     expect(result.fulfilled).to.equal(0);
   });
 
+  it('teardown has init value', async () => {
+    let teardownCalled = false;
+    const result = await execute(
+      Promise.resolve({ iterable: [], init: 'VALUEY' }),
+      () => Promise.resolve(),
+      {},
+      init => {
+        teardownCalled = true;
+        expect(init).to.equal('VALUEY');
+        return Promise.resolve();
+      },
+    );
+
+    expect(teardownCalled).to.equal(true);
+    expect(result.fulfilled).to.equal(0);
+  });
+
   it('teardown reject', async () => {
     let teardownCalled = false;
     const result = await execute(
