@@ -314,4 +314,54 @@ describe('Tests', () => {
 
     expect(result.fulfilled).to.equal(1);
   });
+
+  it('calls teardown', async () => {
+    let teardownCalled = false;
+    const result = await execute(
+      [],
+      () => Promise.resolve(),
+      {},
+      () => {
+        teardownCalled = true;
+        return Promise.resolve();
+      },
+    );
+
+    expect(teardownCalled).to.equal(true);
+    expect(result.fulfilled).to.equal(0);
+  });
+
+  it('teardown reject', async () => {
+    let teardownCalled = false;
+    const result = await execute(
+      [],
+      () => Promise.resolve(),
+      { throwOnError: false },
+      () => {
+        teardownCalled = true;
+        return Promise.reject(new Error());
+      },
+    );
+
+    expect(teardownCalled).to.equal(true);
+    expect(result.fulfilled).to.equal(0);
+    expect(result.errors.length).to.equal(1);
+  });
+
+  it('teardown throws non-promise error', async () => {
+    let teardownCalled = false;
+    const result = await execute(
+      [],
+      () => Promise.resolve(),
+      { throwOnError: false },
+      () => {
+        teardownCalled = true;
+        throw new Error();
+      },
+    );
+
+    expect(teardownCalled).to.equal(true);
+    expect(result.fulfilled).to.equal(0);
+    expect(result.errors.length).to.equal(1);
+  });
 });

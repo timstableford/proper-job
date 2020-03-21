@@ -92,6 +92,8 @@ The arguments are as follows:
   Note that if your iterable input returned an `ExecutorInit` the second argument will be the `init` field returned
   from the first call.
 - An optional options object (`ExecutorConfig`).
+- An optional callback that may return a promise that's called after execution completes.
+  The first argument will be the `init` field if set.
 
 It returns an `ExecutorPromise` on success. This is an extension of a normal Promise that contains an additional `abort()` function. Call this to ask `execute` to gracefully exit. Once the promise resolves it will return an `ExecutorResults` object. If an error occurs it throws an `ExecutorError`, this contains a field called `result` which is an `ExecutorResults` object.
 

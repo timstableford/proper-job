@@ -18,9 +18,12 @@ export {
   ExecutorInit,
 };
 
+export type ExecutorTeardown<T> = (init?: T) => Promise<void> | void;
+
 interface ExecutorOptions<K, V, T> extends ExecutorConfig {
   iterable: ExecutorIterable<K, T>;
   callback: ExecutorCallback<K, V, T>;
+  teardown?: ExecutorTeardown<T>;
   resolve: (results: ExecutorResults<V>) => void;
   reject?: (error: ExecutorError<V>) => void;
 }
@@ -117,13 +120,29 @@ class ParallelExecutor<K, V, T> {
     }
 
     if (this.running === 0) {
-      const throwOnError = conf(DEFAULT_CONFIG.throwOnError, this.options.throwOnError);
-
-      if (throwOnError && this.results.errors.length > 0 && this.options.reject) {
-        this.options.reject(new ExecutorError(this.results));
+      if (this.options.teardown) {
+        try {
+          Promise.resolve(this.options.teardown())
+            .catch(err => {
+              this.results.errors.push(err);
+            })
+            .finally(() => this.finish());
+        } catch (err) {
+          this.results.errors.push(err);
+          this.finish();
+        }
       } else {
-        this.options.resolve(this.results);
+        this.finish();
       }
+    }
+  }
+
+  private finish(): void {
+    const throwOnError = conf(DEFAULT_CONFIG.throwOnError, this.options.throwOnError);
+    if (throwOnError && this.results.errors.length > 0 && this.options.reject) {
+      this.options.reject(new ExecutorError(this.results));
+    } else {
+      this.options.resolve(this.results);
     }
   }
 
@@ -160,6 +179,7 @@ export function execute<K, V = void, T = void>(
   iterable: ExecutorIterable<K, T>,
   callback: ExecutorCallback<K, V, T>,
   options: ExecutorConfig = {},
+  teardown?: ExecutorTeardown<T>,
 ): ExecutorPromise<ExecutorResults<V>> {
   const promise: ExecutorPromise<ExecutorResults<V>> = new ExecutorPromise<ExecutorResults<V>>(
     (resolve, reject) => {
@@ -168,6 +188,7 @@ export function execute<K, V = void, T = void>(
         reject,
         iterable,
         callback,
+        teardown,
         ...options,
       });
       executor.begin();
