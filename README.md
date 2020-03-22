@@ -16,7 +16,7 @@ If you have 10,000 items that need to be processed asyncronously that take vario
 
 ## Features
 
-- Works on any iterable including maps, arrays and Mongo cursors.
+- Works on any Iterable or AsyncIterable including maps, arrays and Mongo cursors.
 - It will run as many promises in parallel as you let it. If one finishes it will start another to keep it at the maximum allowed.
 - It supports aborting mid-way through. This will wait for any running promises to finish and then return.
 - TypeScript definitions.

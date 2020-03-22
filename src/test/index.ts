@@ -1,3 +1,4 @@
+import { MockAsyncIterable } from './mock-async-iterable';
 import { describe, it } from 'mocha';
 import { execute } from '../';
 import { expect } from 'chai';
@@ -331,6 +332,30 @@ describe('Tests', () => {
     expect(result.fulfilled).to.equal(0);
   });
 
+  it('teardown called only when done', async () => {
+    const numbers: number[] = [];
+    for (let i = 0; i < 100; i++) {
+      numbers.push(i);
+    }
+
+    let teardownCalled = false;
+    const result = await execute(
+      numbers,
+      async () => {
+        expect(teardownCalled).to.equal(false);
+        await new Promise(resolve => setTimeout(resolve, 3));
+      },
+      { parallel: 4 },
+      () => {
+        teardownCalled = true;
+        return Promise.resolve();
+      },
+    );
+
+    expect(teardownCalled).to.equal(true);
+    expect(result.fulfilled).to.equal(100);
+  });
+
   it('teardown has init value', async () => {
     let teardownCalled = false;
     const result = await execute(
@@ -380,5 +405,35 @@ describe('Tests', () => {
     expect(teardownCalled).to.equal(true);
     expect(result.fulfilled).to.equal(0);
     expect(result.errors.length).to.equal(1);
+  });
+
+  it('async iterator support', async () => {
+    const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const valuesAsync = new MockAsyncIterable(values);
+
+    interface ProcessOutput {
+      input: number;
+      output: number;
+    }
+
+    const result = await execute<number, ProcessOutput>(
+      valuesAsync,
+      async value => {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return {
+          input: value,
+          output: value * 10,
+        };
+      },
+      { parallel: 4 },
+    );
+
+    expect(result.fulfilled).to.equal(10);
+    expect(result.errors.length).to.equal(0);
+    expect(result.results.length).to.equal(10);
+
+    for (const res of result.results) {
+      expect(res.output).to.equal(res.input * 10);
+    }
   });
 });

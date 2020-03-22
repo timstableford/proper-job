@@ -13,11 +13,11 @@ export interface ExecutorResults<V> {
 }
 
 export interface ExecutorInit<K, T> {
-  iterable: Iterable<K>;
+  iterable: Iterable<K> | AsyncIterable<K>;
   init: T;
 }
 
-export type ExecutorInitResult<K, T> = Iterable<K> | ExecutorInit<K, T>;
+export type ExecutorInitResult<K, T> = Iterable<K> | AsyncIterable<K> | ExecutorInit<K, T>;
 
 export type ExecutorCallback<K, V, T> = (value: K, init?: T) => Promise<V>;
 export type ExecutorIterableFunction<K, T> = () => Promise<ExecutorInitResult<K, T>>;

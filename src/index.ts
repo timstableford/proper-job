@@ -50,8 +50,9 @@ class ParallelExecutor<K, V, T> {
     fulfilled: 0,
   };
   private running = 0;
-  private iterator?: Iterator<K>;
+  private iterator?: Iterator<K> | AsyncIterator<K>;
   private init?: T;
+  private filling = false;
 
   public constructor(options: ExecutorOptions<K, V, T>) {
     this.options = options;
@@ -85,12 +86,7 @@ class ParallelExecutor<K, V, T> {
     this.options.iterable
       .then(iterable => {
         if (iterable) {
-          if ((iterable as Iterable<K>)[Symbol.iterator]) {
-            this.iterator = (iterable as Iterable<K>)[Symbol.iterator]();
-          } else {
-            this.iterator = (iterable as ExecutorInit<K, T>).iterable[Symbol.iterator]();
-            this.init = (iterable as ExecutorInit<K, T>).init;
-          }
+          this.createIterator(iterable);
         } else {
           this.options.continueOnError = false;
           this.results.errors.push(new Error('Iterator returned void'));
@@ -103,7 +99,31 @@ class ParallelExecutor<K, V, T> {
       .finally(() => this.fill());
   }
 
+  private createIterator(iterable: ExecutorIterable<K, T>): void {
+    if ((iterable as AsyncIterable<K>)[Symbol.asyncIterator]) {
+      this.iterator = (iterable as AsyncIterable<K>)[Symbol.asyncIterator]();
+    } else if ((iterable as Iterable<K>)[Symbol.iterator]) {
+      this.iterator = (iterable as Iterable<K>)[Symbol.iterator]();
+    } else {
+      this.createIterator((iterable as ExecutorInit<K, T>).iterable);
+      this.init = (iterable as ExecutorInit<K, T>).init;
+    }
+  }
+
   private fill(): void {
+    if (this.filling) {
+      return;
+    }
+    this.filling = true;
+
+    this.fillPromise()
+      .catch(err => {
+        this.results.errors.push(err);
+      })
+      .finally(() => (this.filling = false));
+  }
+
+  private async fillPromise(): Promise<void> {
     const parallel = this.options.parallel || DEFAULT_CONFIG.parallel;
     const continueOnError = conf(DEFAULT_CONFIG.continueOnError, this.options.continueOnError);
     const shouldContinue =
@@ -111,7 +131,7 @@ class ParallelExecutor<K, V, T> {
 
     if (shouldContinue) {
       while (this.running < parallel && this.iterator) {
-        const iteratorValue = this.iterator.next();
+        const iteratorValue = await Promise.resolve(this.iterator.next());
         if (iteratorValue.done) {
           break;
         }
@@ -122,13 +142,10 @@ class ParallelExecutor<K, V, T> {
     if (this.running === 0) {
       if (this.options.teardown) {
         try {
-          Promise.resolve(this.options.teardown(this.init))
-            .catch(err => {
-              this.results.errors.push(err);
-            })
-            .finally(() => this.finish());
+          await this.options.teardown(this.init);
         } catch (err) {
           this.results.errors.push(err);
+        } finally {
           this.finish();
         }
       } else {
