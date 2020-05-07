@@ -436,4 +436,19 @@ describe('Tests', () => {
       expect(res.output).to.equal(res.input * 10);
     }
   });
+
+  it('async iterator where parallel greater than job count and all fail', async () => {
+    const values = [1, 2, 3, 4, 5, 6, 7];
+    const valuesAsync = new MockAsyncIterable(values);
+
+    const result = await execute<number, void>(
+      valuesAsync,
+      () => {
+        throw new Error('Failed');
+      },
+      { parallel: 16, throwOnError: false },
+    );
+
+    expect(result.errors.length).to.equal(7);
+  });
 });

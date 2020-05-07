@@ -133,6 +133,8 @@ class ParallelExecutor<K, V, T> {
       while (this.running < parallel && this.iterator) {
         const iteratorValue = await Promise.resolve(this.iterator.next());
         if (iteratorValue.done) {
+          // If done clear the iterator so it won't keep filling when there's a race condition.
+          this.iterator = undefined;
           break;
         }
         this.wrap(this.start(iteratorValue.value));
