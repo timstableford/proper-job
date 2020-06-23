@@ -1,3 +1,4 @@
+import { ExecutorAbortError } from './executor-abort';
 import {
   ExecutorCallback,
   ExecutorConfig,
@@ -16,6 +17,7 @@ export {
   ExecutorCallback,
   ExecutorIterable,
   ExecutorInit,
+  ExecutorAbortError,
 };
 
 export type ExecutorTeardown<T> = (init?: T) => Promise<void> | void;
@@ -185,7 +187,11 @@ class ParallelExecutor<K, V, T> {
         this.results.fulfilled++;
       })
       .catch(error => {
-        this.results.errors.push(error);
+        if (error instanceof ExecutorAbortError) {
+          this.results.aborted = true;
+        } else {
+          this.results.errors.push(error);
+        }
       })
       .finally(() => {
         this.running--;

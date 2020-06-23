@@ -1,6 +1,6 @@
+import { ExecutorAbortError, execute } from '../';
 import { MockAsyncIterable } from './mock-async-iterable';
 import { describe, it } from 'mocha';
-import { execute } from '../';
 import { expect } from 'chai';
 
 describe('Tests', () => {
@@ -450,5 +450,24 @@ describe('Tests', () => {
     );
 
     expect(result.errors.length).to.equal(7);
+  });
+
+  it('throw ExecutorAbortError to finish early', async () => {
+    const values = [1, 2, 3, 4, 5, 6, 7];
+
+    const result = await execute<number, void>(
+      values,
+      i => {
+        if (i === 4) {
+          throw new ExecutorAbortError();
+        }
+        return Promise.resolve();
+      },
+      { parallel: 1, continueOnError: true, throwOnError: false },
+    );
+
+    expect(result.errors.length).to.equal(0);
+    expect(result.fulfilled).to.equal(3);
+    expect(result.aborted).to.equal(true);
   });
 });

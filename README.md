@@ -123,6 +123,10 @@ A structure that contains two fields:
 
 A sub-class of Error thrown when all all items in the input iterator have been completed if there were any that failed. Contains a field called `result` which is an `ExecutorResults` object. The results will contain any succesful output in addition to the errors.
 
+### ExecutorAbortError
+
+Throw this from within the executor callback argument to cause it to gracefully exit. The error count will remain 0 but aborted will be set to true.
+
 ### ExecutorConfig
 
 The optional third argument of `execute()`. It contains the following fields:
