@@ -343,7 +343,7 @@ describe('Tests', () => {
       numbers,
       async () => {
         expect(teardownCalled).to.equal(false);
-        await new Promise(resolve => setTimeout(resolve, 3));
+        await new Promise(resolve => setTimeout(resolve, 1));
       },
       { parallel: 4 },
       () => {
@@ -450,6 +450,30 @@ describe('Tests', () => {
     );
 
     expect(result.errors.length).to.equal(7);
+  });
+
+  it('async iterator throws an error', async () => {
+    // This will cause the async iterable to throw an error.
+    const valuesAsync = new MockAsyncIterable([1, 2, 3, 4], { throwAfter: 2 });
+
+    const result = await execute<number, void>(valuesAsync, () => Promise.resolve(), {
+      parallel: 1,
+      throwOnError: false,
+    });
+
+    expect(result.errors.length).to.equal(1);
+  });
+
+  it('async iterator throws an async error', async () => {
+    // This will cause the async iterable to throw an error.
+    const valuesAsync = new MockAsyncIterable([1, 2, 3, 4], { throwAfterAsync: 2 });
+
+    const result = await execute<number, void>(valuesAsync, () => Promise.resolve(), {
+      parallel: 1,
+      throwOnError: false,
+    });
+
+    expect(result.errors.length).to.equal(1);
   });
 
   it('throw ExecutorAbortError to finish early', async () => {

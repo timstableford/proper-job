@@ -119,10 +119,13 @@ class ParallelExecutor<K, V, T> {
     this.filling = true;
 
     this.fillPromise()
+      .then(() => (this.filling = false))
       .catch(err => {
         this.results.errors.push(err);
-      })
-      .finally(() => (this.filling = false));
+        this.options.continueOnError = false;
+        this.filling = false;
+        this.fill();
+      });
   }
 
   private async fillPromise(): Promise<void> {
