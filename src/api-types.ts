@@ -3,6 +3,7 @@ export interface ExecutorConfig {
   continueOnError?: boolean;
   storeOutput?: boolean;
   throwOnError?: boolean;
+  maxErrors?: number;
 }
 
 export interface ExecutorResults<V> {

@@ -193,7 +193,12 @@ class ParallelExecutor<K, V, T> {
         if (error instanceof ExecutorAbortError) {
           this.results.aborted = true;
         } else {
-          this.results.errors.push(error);
+          if (
+            this.options.maxErrors === undefined ||
+            this.results.errors.length < this.options.maxErrors
+          ) {
+            this.results.errors.push(error);
+          }
         }
       })
       .finally(() => {
