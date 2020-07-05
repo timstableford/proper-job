@@ -1,3 +1,5 @@
+import { AsyncBuffer } from './async-buffer';
+import { AsyncBufferIterator } from './async-buffer-iterator';
 import { ExecutorAbortError } from './executor-abort';
 import {
   ExecutorCallback,
@@ -18,6 +20,8 @@ export {
   ExecutorIterable,
   ExecutorInit,
   ExecutorAbortError,
+  AsyncBuffer,
+  AsyncBufferIterator,
 };
 
 export type ExecutorTeardown<T> = (init?: T) => Promise<void> | void;

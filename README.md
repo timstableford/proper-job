@@ -1,8 +1,8 @@
 # NodeJS Proper Job
 
-A library designed to run promises in batches.
+A library designed to run promises in batches and parallelise iterating on a queue.
 
-If you have 10,000 items that need to be processed asyncronously that take various amount of time this library may help you.
+If you have 10,000 items that need to be processed asyncronously that take various amount of time this library may help you. Or if you're reading from a queue and doing a processing task and want to paralleise that.
 
 ## Why?
 
@@ -20,6 +20,7 @@ If you have 10,000 items that need to be processed asyncronously that take vario
 - It will run as many promises in parallel as you let it. If one finishes it will start another to keep it at the maximum allowed.
 - It supports aborting mid-way through. This will wait for any running promises to finish and then return.
 - TypeScript definitions.
+- A queue that supports async operations with a cap that waits for it to drain before allowing more items. The queue also work as an async iterator.
 - Unit tests.
 
 ## Examples
@@ -54,8 +55,6 @@ const execute = require('proper-job').execute;
 // Or in TypeScript, import { execute } from 'proper-job';
 
 async function main() {
-    const initFunction = ;
-
     const results = await execute(async () => {
         // Do some async thing.
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -72,6 +71,47 @@ async function main() {
         parallel: 2 // The number of promises to run in parallel.
     })
     console.log(results);
+}
+
+main().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
+```
+
+### Iterating on a stream
+
+```
+const ProperJob = require('proper-job');
+
+const execute = ProperJob.execute;
+const AsyncBuffer = ProperJob.AsyncBuffer;
+
+async function main() {
+    const buffer = new AsyncBuffer();
+
+    console.time('Execution Complete');
+
+    execute(buffer, async value => {
+        // Do some async thing on your value.
+        console.log(value);
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }, {
+        parallel: 10 // The number of promises to run in parallel.
+    }).then(() => {
+        console.timeEnd('Execution Complete');
+    }).catch(err => {
+        console.error('Execution failed', err);
+    });
+
+    // Now push all your items as they're received. This will block until
+    // the queue is within it's maximum size.
+    for (let i = 0; i < 10; i++) {
+        await buffer.push(i);
+    }
+
+    // Finally to cause the executor to quit, gracefully draining the queue.
+    await buffer.quit();
 }
 
 main().catch(err => {
@@ -137,3 +177,18 @@ The optional third argument of `execute()`. It contains the following fields:
 - `storeOutput` `(default true)` - Whether to store the output of the callback in the `results` array. Errors will always be stored.
 - `throwOnError` `(default true)` - Whether to throw on completion if any errors were encountered.
   If set to false and there are errors the `ExecutorResults` object will still contain the errors in its array.
+- `maxErrors` `(default none)` - If set to a number will stop storing errors when the cap is met.
+
+### AsyncBuffer
+
+This class allows buffering from an asyncronous source and pushing it to a buffer that will block until it's below a specified size. It also provides a pop function that blocks until data is available or quit is called. In addition it can be used as an async iterator.
+
+- `constructor` - Accepts an optional `AsyncBufferOptions` object as configuration.
+- `push` - Accepts a single value to be pushed to the buffer and returns a Promise that resolves to void once it's added. This will throw an error if called after quit has been called.
+- `pop` - Returns a Promise that resolves to the oldest value in the buffer or undefined if quit has been called.
+- `Symbol.asyncIterator` - Used to iterate asyncronously eg `for await (const value of buffer)`, or passing to `execute`. Completed once `quit` is called and the buffer has drained. Returns a standard AsyncIterator.
+- `quit` - Call this to cause the iterator to end and all pop calls to resolve. This call returns a Promise of void that only resolves when the queue has drained. After this is called subsequent calls to push will throw an error and pop will return a Promise that resolves to undefined.
+
+### AsyncBufferOptions
+
+- `maxSize` `(default 100)` - The maximum number of items to allow into the buffer before blocking the push call until a pop.

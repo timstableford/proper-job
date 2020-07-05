@@ -6,6 +6,10 @@ export interface ExecutorConfig {
   maxErrors?: number;
 }
 
+export interface AsyncBufferOptions {
+  maxSize?: number;
+}
+
 export interface ExecutorResults<V> {
   results: V[];
   errors: Error[];
