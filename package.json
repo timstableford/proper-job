@@ -12,7 +12,7 @@
     "clean": "rm -r dist tsconfig.tsbuildinfo",
     "lint": "./node_modules/@luvies/config/scripts/lint.sh",
     "fix": "./node_modules/@luvies/config/scripts/lint.sh fix",
-    "test": "mocha --recursive dist/test"
+    "test": "mocha --exit --recursive dist/test"
   },
   "files": [
     "dist/*.d.ts",
@@ -36,5 +36,8 @@
     "prettier": "^1.19.1",
     "tslib": "^1.11.1",
     "typescript": "^3.8.3"
+  },
+  "dependencies": {
+    "source-map-support": "^0.5.19"
   }
 }

@@ -1,5 +1,8 @@
+import 'source-map-support/register';
+
 import { AsyncBuffer } from './async-buffer';
 import { AsyncBufferIterator } from './async-buffer-iterator';
+import { ConnectionPoolRunner } from './connection-pool-runner';
 import { ExecutorAbortError } from './executor-abort';
 import {
   ExecutorCallback,
@@ -10,6 +13,7 @@ import {
 } from './api-types';
 import { ExecutorError } from './executor-error';
 import { ExecutorPromise } from './executor-promise';
+import { ScalingConnectionPool } from './scaling-connection-pool';
 
 export {
   ExecutorPromise,
@@ -22,6 +26,8 @@ export {
   ExecutorAbortError,
   AsyncBuffer,
   AsyncBufferIterator,
+  ScalingConnectionPool,
+  ConnectionPoolRunner,
 };
 
 export type ExecutorTeardown<T> = (init?: T) => Promise<void> | void;
