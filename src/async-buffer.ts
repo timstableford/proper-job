@@ -4,14 +4,19 @@ import { EventEmitter } from 'events';
 
 const DEFAULT_BUFFER_SIZE = 100;
 
-export class AsyncBuffer<T> implements AsyncIterable<T> {
-  private buffer: T[] = [];
-  private maxSize: number;
-  private internalEvents = new EventEmitter();
-  private running = true;
+export class AsyncBuffer<T> extends EventEmitter implements AsyncIterable<T> {
+  protected buffer: T[] = [];
+  protected maxSize: number;
+  protected running = true;
 
   public constructor(options?: AsyncBufferOptions) {
+    super();
     this.maxSize = options && options.maxSize ? options.maxSize : DEFAULT_BUFFER_SIZE;
+    this.setMaxListeners(this.maxSize * 4);
+  }
+
+  public get length(): number {
+    return this.buffer.length;
   }
 
   public async push(element: T): Promise<void> {
@@ -23,7 +28,7 @@ export class AsyncBuffer<T> implements AsyncIterable<T> {
       await this.waitForPop();
     }
     this.buffer.push(element);
-    this.internalEvents.emit('push');
+    this.emit('push');
   }
 
   public async pop(): Promise<T | undefined> {
@@ -41,7 +46,7 @@ export class AsyncBuffer<T> implements AsyncIterable<T> {
     }
 
     const element = this.buffer.shift();
-    this.internalEvents.emit('pop');
+    this.emit('pop');
     return element;
   }
 
@@ -51,22 +56,22 @@ export class AsyncBuffer<T> implements AsyncIterable<T> {
       await this.waitForPop();
     }
     // So that if there's no items it cancels waiting for a push.
-    this.internalEvents.emit('push');
+    this.emit('push');
   }
 
   public [Symbol.asyncIterator](): AsyncIterator<T> {
     return new AsyncBufferIterator<T>(() => this.pop());
   }
 
-  private waitForPop(): Promise<void> {
+  protected waitForPop(): Promise<void> {
     return new Promise(resolve => {
-      this.internalEvents.once('pop', () => resolve());
+      this.once('pop', () => resolve());
     });
   }
 
   private waitForPush(): Promise<void> {
     return new Promise(resolve => {
-      this.internalEvents.once('push', () => resolve());
+      this.once('push', () => resolve());
     });
   }
 }

@@ -16,109 +16,202 @@ describe('Scaling Connection Pool Tests', () => {
       return Promise.resolve();
     }
   }
-  let pool: ScalingConnectionPool<Runner>;
 
   beforeEach(() => {
     created = 0;
     destroyed = 0;
-    pool = new ScalingConnectionPool(() => new Runner(), {
-      minInstances: 1,
-      maxInstances: 4,
-      scaleInterval: 10,
-      scaleDownAt: 0.4,
-      scaleUpAt: 0.8,
+  });
+
+  describe('Auto-scaling tests', () => {
+    let pool: ScalingConnectionPool<Runner>;
+
+    beforeEach(() => {
+      pool = new ScalingConnectionPool(() => new Runner(), {
+        minInstances: 1,
+        maxInstances: 4,
+        scaleInterval: 10,
+        scaleDownAt: 0.4,
+        scaleUpAt: 0.8,
+      });
+    });
+
+    afterEach(async () => {
+      await pool.quit();
+      expect(pool.getInstanceCount(), 'Instance count 0 after shutdown').to.equal(0);
+    });
+
+    it('Simple usage', async () => {
+      const res = await pool.run(instance => {
+        expect(instance).to.be.an('object');
+        return Promise.resolve('bob');
+      });
+      expect(res).to.equal('bob');
+    });
+
+    it('Scale to minimum on creation', async () => {
+      while (pool.getInstanceCount() < 1) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+
+      expect(pool.getInstanceCount(), 'Instance count 1 after warmup').to.equal(1);
+      expect(pool.getClaimedCount(), '0 claimed after warmup').to.equal(0);
+
+      const usage = await new Promise(resolve => pool.once('usage', resolve));
+      expect(usage).to.equal(0);
+      expect(pool.getInstanceCount(), 'Shouldnt have scaled up with no usage').to.equal(1);
+    });
+
+    it('Fired initial available', async () => {
+      // This fires or the test times out
+      await new Promise(resolve => pool.once('available', resolve));
+      expect(pool.getInstanceCount(), 'Instance count 1 after warmup').to.equal(1);
+    });
+
+    it('Scales up when loaded', async () => {
+      // Wait a couple of usage cycles to make sure it scales to 1 and not more
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => pool.once('usage', resolve));
+      }
+      expect(pool.getInstanceCount(), 'Instance count 1 after warmup').to.equal(1);
+
+      // Now to load it. Which basically means just claiming an instance for a while.
+      const claimedInstance1 = await pool.claim();
+
+      // Wait a couple more cycles to make sure it only scales up by 1.
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => pool.once('usage', resolve));
+      }
+      expect(pool.getInstanceCount(), 'Instance 2 instances aftert a few scale cycles').to.equal(2);
+
+      pool.release(claimedInstance1);
+    });
+
+    it('Scales down when load reduced', async () => {
+      // Claim 4
+      const claimed: Runner[] = [];
+      for (let i = 0; i < 4; i++) {
+        claimed.push(await pool.claim());
+      }
+
+      expect(pool.getInstanceCount(), 'Instance count 4 after all claimed').to.equal(4);
+      expect(pool.getClaimedCount(), '4 claimed after 4 claims').to.equal(4);
+      expect(created).to.equal(4);
+      expect(destroyed).to.equal(0);
+
+      for (const instance of claimed) {
+        pool.release(instance);
+      }
+
+      while (pool.getInstanceCount() > 1) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+
+      // Wait a few more ticks to be sure it doesnt keep going
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => pool.once('usage', resolve));
+      }
+      expect(pool.getInstanceCount(), 'Instance count 1 after scale down').to.equal(1);
+      expect(pool.getClaimedCount(), '0 claimed after all released').to.equal(0);
+      expect(created).to.equal(4);
+      expect(destroyed).to.equal(3);
+    });
+
+    it('Instantly scales', async () => {
+      let usageCalled = false;
+      pool.once('usage', () => (usageCalled = true));
+
+      const start = Date.now();
+      const claimed: Runner[] = [];
+      for (let i = 0; i < 4; i++) {
+        claimed.push(await pool.claim());
+      }
+      expect(Date.now() - start).to.be.below(10);
+      expect(usageCalled).to.equal(false);
+
+      for (const instance of claimed) {
+        pool.release(instance);
+      }
     });
   });
 
-  afterEach(async () => {
-    await pool.quit();
-    expect(pool.getInstanceCount(), 'Instance count 0 after shutdown').to.equal(0);
-  });
+  describe('Manual-scaling tests', () => {
+    let pool: ScalingConnectionPool<Runner>;
 
-  it('Simple usage', async () => {
-    const res = await pool.run(instance => {
-      expect(instance).to.be.an('object');
-      return Promise.resolve('bob');
+    beforeEach(() => {
+      pool = new ScalingConnectionPool(() => new Runner(), {
+        minInstances: 2,
+        maxInstances: 4,
+        autoScale: false,
+        responsiveScale: false,
+      });
     });
-    expect(res).to.equal('bob');
-  });
 
-  it('Scale to minimum on creation', async () => {
-    while (pool.getInstanceCount() < 1) {
-      await new Promise(resolve => pool.once('scale', resolve));
-    }
+    afterEach(async () => {
+      await pool.quit();
+      expect(pool.getInstanceCount(), 'Instance count 0 after shutdown').to.equal(0);
+    });
 
-    expect(pool.getInstanceCount(), 'Instance count 1 after warmup').to.equal(1);
-    expect(pool.getClaimedCount(), '0 claimed after warmup').to.equal(0);
+    it('Still auto-scales to minimum', async () => {
+      while (pool.getInstanceCount() < 2) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+      expect(pool.getInstanceCount()).to.equal(2);
+    });
 
-    const usage = await new Promise(resolve => pool.once('usage', resolve));
-    expect(usage).to.equal(0);
-    expect(pool.getInstanceCount(), 'Shouldnt have scaled up with no usage').to.equal(1);
-  });
+    it('Scale up and stay there', async () => {
+      while (pool.getInstanceCount() < 2) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
 
-  it('Scales up when loaded', async () => {
-    // Wait a couple of usage cycles to make sure it scales to 1 and not more
-    for (let i = 0; i < 3; i++) {
-      await new Promise(resolve => pool.once('usage', resolve));
-    }
-    expect(pool.getInstanceCount(), 'Instance count 1 after warmup').to.equal(1);
+      await pool.scaleUp();
 
-    // Now to load it. Which basically means just claiming an instance for a while.
-    const claimedInstance1 = await pool.claim();
+      expect(pool.getInstanceCount()).to.equal(3);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(pool.getInstanceCount()).to.equal(3);
+    });
 
-    // Wait a couple more cycles to make sure it only scales up by 1.
-    for (let i = 0; i < 3; i++) {
-      await new Promise(resolve => pool.once('usage', resolve));
-    }
-    expect(pool.getInstanceCount(), 'Instance 2 instances aftert a few scale cycles').to.equal(2);
+    it('Scale up and down', async () => {
+      while (pool.getInstanceCount() < 2) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
 
-    pool.release(claimedInstance1);
-  });
+      await pool.scaleUp();
+      expect(pool.getInstanceCount()).to.equal(3);
 
-  it('Scales down when load reduced', async () => {
-    // Claim 4
-    const claimed: Runner[] = [];
-    for (let i = 0; i < 4; i++) {
-      claimed.push(await pool.claim());
-    }
+      await pool.scaleDown();
+      expect(pool.getInstanceCount()).to.equal(2);
+    });
 
-    expect(pool.getInstanceCount(), 'Instance count 4 after all claimed').to.equal(4);
-    expect(pool.getClaimedCount(), '4 claimed after 4 claims').to.equal(4);
-    expect(created).to.equal(4);
-    expect(destroyed).to.equal(0);
+    it('Claim waits for scale up', async () => {
+      while (pool.getInstanceCount() < 2) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
 
-    for (const instance of claimed) {
-      pool.release(instance);
-    }
+      const initialClaims = [await pool.claim(), await pool.claim()];
+      expect(pool.getClaimedCount()).to.equal(2);
 
-    while (pool.getInstanceCount() > 1) {
-      await new Promise(resolve => pool.once('scale', resolve));
-    }
+      let thirdClaimed = false;
+      const thirdClaimPromise = pool.claim().then(claim => {
+        thirdClaimed = true;
+        return claim;
+      });
 
-    // Wait a few more ticks to be sure it doesnt keep going
-    for (let i = 0; i < 3; i++) {
-      await new Promise(resolve => pool.once('usage', resolve));
-    }
-    expect(pool.getInstanceCount(), 'Instance count 1 after scale down').to.equal(1);
-    expect(pool.getClaimedCount(), '0 claimed after all released').to.equal(0);
-    expect(created).to.equal(4);
-    expect(destroyed).to.equal(3);
-  });
+      expect(pool.getClaimedCount()).to.equal(2);
+      expect(pool.getInstanceCount()).to.equal(2);
 
-  it('Instantly scales', async () => {
-    let usageCalled = false;
-    pool.once('usage', () => (usageCalled = true));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(thirdClaimed).to.equal(false);
 
-    const start = Date.now();
-    const claimed: Runner[] = [];
-    for (let i = 0; i < 4; i++) {
-      claimed.push(await pool.claim());
-    }
-    expect(Date.now() - start).to.be.below(10);
-    expect(usageCalled).to.equal(false);
+      await pool.scaleUp();
+      expect(pool.getInstanceCount()).to.equal(3);
+      const thirdClaim = await thirdClaimPromise;
+      expect(thirdClaimed).to.equal(true);
 
-    for (const instance of claimed) {
-      pool.release(instance);
-    }
+      pool.release(initialClaims[0]);
+      pool.release(initialClaims[1]);
+      pool.release(thirdClaim);
+
+      expect(pool.getClaimedCount()).to.equal(0);
+    });
   });
 });

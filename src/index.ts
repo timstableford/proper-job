@@ -2,17 +2,24 @@ import 'source-map-support/register';
 
 import { AsyncBuffer } from './async-buffer';
 import { AsyncBufferIterator } from './async-buffer-iterator';
-import { ConnectionPoolRunner } from './connection-pool-runner';
-import { ExecutorAbortError } from './executor-abort';
 import {
+  ClaimCallback,
+  ConnectionPoolOptions,
+  CreatePollingRunnerCallback,
+  CreateRunnerCallback,
   ExecutorCallback,
   ExecutorConfig,
   ExecutorInit,
   ExecutorIterable,
   ExecutorResults,
+  PollingAsyncBufferOptions,
 } from './api-types';
+import { ConnectionPoolRunner } from './connection-pool-runner';
+import { ExecutorAbortError } from './executor-abort';
 import { ExecutorError } from './executor-error';
 import { ExecutorPromise } from './executor-promise';
+import { PollingAsyncBuffer } from './polling-async-buffer';
+import { PollingConnectionPoolRunner } from './polling-connection-pool-runner';
 import { ScalingConnectionPool } from './scaling-connection-pool';
 
 export {
@@ -28,6 +35,13 @@ export {
   AsyncBufferIterator,
   ScalingConnectionPool,
   ConnectionPoolRunner,
+  CreateRunnerCallback,
+  CreatePollingRunnerCallback,
+  ClaimCallback,
+  ConnectionPoolOptions,
+  PollingAsyncBufferOptions,
+  PollingAsyncBuffer,
+  PollingConnectionPoolRunner,
 };
 
 export type ExecutorTeardown<T> = (init?: T) => Promise<void> | void;
