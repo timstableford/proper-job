@@ -56,6 +56,7 @@ export class AsyncBuffer<T> extends EventEmitter implements AsyncIterable<T> {
       await this.waitForPop();
     }
     // So that if there's no items it cancels waiting for a push.
+    // This also shuts down any iterators.
     this.emit('push');
   }
 

@@ -113,12 +113,12 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
 
       if (unusedIndex >= 0) {
         const unused = this.instanceList[unusedIndex];
+        this.instanceList.splice(unusedIndex, 1);
         if (unused && unused.instance) {
           await unused.instance.quit();
         } else {
           console.warn('Pool connection may have tried to shutdown while starting up');
         }
-        this.instanceList.splice(unusedIndex, 1);
       } else {
         await new Promise(resolve => this.once('released', resolve));
       }
