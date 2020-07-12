@@ -1,4 +1,4 @@
-import { ItOptions, MockAsyncIterator } from './mock-async-iterator';
+import { ItOptions, MockAsyncIterator } from './async-iterator.mock';
 
 export class MockAsyncIterable<K> implements AsyncIterable<K> {
   private iterable: Iterable<K>;

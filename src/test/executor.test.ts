@@ -1,5 +1,5 @@
 import { ExecutorAbortError, execute } from '../';
-import { MockAsyncIterable } from './mock-async-iterable';
+import { MockAsyncIterable } from './async-iterable.mock';
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 
