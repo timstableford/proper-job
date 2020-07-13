@@ -22,6 +22,27 @@ describe('Scaling Connection Pool Tests', () => {
     destroyed = 0;
   });
 
+  it('Error creating runner handled', async () => {
+    const testPool = new ScalingConnectionPool(
+      () => {
+        throw new Error('Test Error');
+      },
+      {
+        minInstances: 1,
+        maxInstances: 4,
+        scaleInterval: 10,
+        scaleDownAt: 0.4,
+        scaleUpAt: 0.8,
+      },
+    );
+
+    const err: Error = await new Promise(resolve => testPool.once('error', resolve));
+    expect(err.message).to.equal('Test Error');
+    expect(testPool.getInstanceCount()).to.equal(0);
+
+    await testPool.quit();
+  });
+
   describe('Auto-scaling tests', () => {
     let pool: ScalingConnectionPool<Runner>;
 
@@ -46,6 +67,18 @@ describe('Scaling Connection Pool Tests', () => {
         return Promise.resolve('bob');
       });
       expect(res).to.equal('bob');
+    });
+
+    it('Run error passthrough and release', async () => {
+      expect(pool.getClaimedCount()).to.equal(0);
+      try {
+        await pool.run(() => {
+          throw new Error('Test Error');
+        });
+      } catch (err) {
+        expect(err.message).to.equal('Test Error');
+      }
+      expect(pool.getClaimedCount()).to.equal(0);
     });
 
     it('Scale to minimum on creation', async () => {

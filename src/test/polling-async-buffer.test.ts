@@ -10,6 +10,7 @@ describe('Polling Async Buffer tests', () => {
   let created = 0;
   let destroyed = 0;
   let buffer: PollingAsyncBuffer<string>;
+  let fetchError: Error | undefined;
 
   valueEmitter.setMaxListeners(100);
 
@@ -23,119 +24,158 @@ describe('Polling Async Buffer tests', () => {
     }
 
     public async fetch(): Promise<undefined | string> {
-      while (runnerData.length === 0) {
+      // eslint-disable-next-line no-unmodified-loop-condition
+      while (runnerData.length === 0 && !fetchError) {
         await new Promise(resolve => valueEmitter.once('value', resolve));
+      }
+      if (fetchError) {
+        const err = fetchError;
+        fetchError = undefined;
+        throw err;
       }
       return runnerData.shift();
     }
   }
 
-  beforeEach(() => {
-    created = 0;
-    destroyed = 0;
+  it('Creating runner throws an error handled', async () => {
+    buffer = new PollingAsyncBuffer(
+      () => {
+        throw new Error('Test Error');
+      },
+      {
+        minInstances: 1,
+        maxInstances: 4,
+      },
+    );
+    const err: Error = await new Promise(resolve => buffer.once('error', resolve));
+    expect(err.message).to.equal('Test Error');
 
-    runnerData = [];
-
-    buffer = new PollingAsyncBuffer(() => new Runner(), {
-      minInstances: 1,
-      maxInstances: 4,
-    });
+    await buffer.quit();
   });
 
-  afterEach(async () => {
-    const quit = buffer.quit();
-    // Need to now wait for all runners to return.
-    // Simulate them all timing out by broadcasting undefined.
-    for (let i = 0; i < 4; i++) {
+  describe('Standard Instance', () => {
+    beforeEach(() => {
+      created = 0;
+      destroyed = 0;
+
+      runnerData = [];
+
+      buffer = new PollingAsyncBuffer(() => new Runner(), {
+        minInstances: 1,
+        maxInstances: 4,
+      });
+    });
+
+    afterEach(async () => {
+      const quit = buffer.quit();
+      // Need to now wait for all runners to return.
+      // Simulate them all timing out by broadcasting undefined.
+      for (let i = 0; i < 4; i++) {
+        runnerData.push(undefined);
+        valueEmitter.emit('value');
+      }
+
+      // Consume any leftover data (shouldnt be undefined)
+      while (buffer.length > 0) {
+        expect(await buffer.pop()).to.be.a('string');
+      }
+
+      await quit;
+    });
+
+    it('Startup and shutdown', async () => {
+      const resPromise = buffer.pop();
+      runnerData.push('bob');
+      valueEmitter.emit('value');
+      expect(await resPromise).to.equal('bob');
+    });
+
+    it('Fetch error handled and emitted', async () => {
+      // Wait for the initial instance
+      // eslint-disable-next-line no-unmodified-loop-condition
+      while (created === 0) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+
+      const errorPromise: Promise<Error> = new Promise(resolve => buffer.once('error', resolve));
+      fetchError = new Error('Test Error');
+      valueEmitter.emit('value');
+
+      const error = await errorPromise;
+      expect(error.message).to.equal('Test Error');
+    });
+
+    it('Scale up', async () => {
+      // Wait for the initial instance
+      // eslint-disable-next-line no-unmodified-loop-condition
+      while (created === 0) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+
+      for (let i = 0; i < 3; i++) {
+        runnerData.push(String(i));
+        valueEmitter.emit('value');
+
+        await buffer.pop();
+      }
+
+      expect(created).to.be.above(1);
+    });
+
+    it('Iterate a load of values', async () => {
+      for (let i = 0; i < 1000; i++) {
+        runnerData.push(String(i));
+        valueEmitter.emit('value');
+      }
+
+      let received = 0;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _res of buffer) {
+        received = received + 1;
+        if (received === 300) {
+          expect(buffer.getInstanceCount()).to.equal(4);
+        }
+        if (received >= 1000) {
+          break;
+        }
+      }
+      expect(received).to.equal(1000);
+    });
+
+    it('Scale down', async () => {
+      // Need to scale up first.
+      for (let i = 0; i < 1000; i++) {
+        runnerData.push(String(i));
+        valueEmitter.emit('value');
+      }
+
+      for (let i = 0; i < 1000; i++) {
+        await buffer.pop();
+      }
+
+      expect(buffer.getInstanceCount()).to.equal(4);
+
+      // Emitting undefined counts as a poll timeout so it should then destroy an instance.
       runnerData.push(undefined);
       valueEmitter.emit('value');
-    }
 
-    // Consume any leftover data (shouldnt be undefined)
-    while (buffer.length > 0) {
-      expect(await buffer.pop()).to.be.a('string');
-    }
+      await new Promise(resolve => buffer.once('scale', resolve));
+      expect(buffer.getInstanceCount()).to.equal(3);
 
-    await quit;
-  });
-
-  it('Startup and shutdown', async () => {
-    const resPromise = buffer.pop();
-    runnerData.push('bob');
-    valueEmitter.emit('value');
-    expect(await resPromise).to.equal('bob');
-  });
-
-  it('Scale up', async () => {
-    // Wait for the initial instance
-    // eslint-disable-next-line no-unmodified-loop-condition
-    while (created === 0) {
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-
-    for (let i = 0; i < 3; i++) {
-      runnerData.push(String(i));
+      // If it then emits a value the next one shouldn't shut down.
+      runnerData.push('bob');
       valueEmitter.emit('value');
 
-      await buffer.pop();
-    }
+      // Wait a couple of ticks to be sure.
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(buffer.getInstanceCount()).to.equal(3);
 
-    expect(created).to.be.above(1);
-  });
-
-  it('Iterate a load of values', async () => {
-    for (let i = 0; i < 1000; i++) {
-      runnerData.push(String(i));
+      // Scale down again
+      runnerData.push(undefined);
       valueEmitter.emit('value');
-    }
 
-    let received = 0;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _res of buffer) {
-      received = received + 1;
-      if (received === 300) {
-        expect(buffer.getInstanceCount()).to.equal(4);
-      }
-      if (received >= 1000) {
-        break;
-      }
-    }
-    expect(received).to.equal(1000);
-  });
-
-  it('Scale down', async () => {
-    // Need to scale up first.
-    for (let i = 0; i < 1000; i++) {
-      runnerData.push(String(i));
-      valueEmitter.emit('value');
-    }
-
-    for (let i = 0; i < 1000; i++) {
-      await buffer.pop();
-    }
-
-    expect(buffer.getInstanceCount()).to.equal(4);
-
-    // Emitting undefined counts as a poll timeout so it should then destroy an instance.
-    runnerData.push(undefined);
-    valueEmitter.emit('value');
-
-    await new Promise(resolve => buffer.once('scale', resolve));
-    expect(buffer.getInstanceCount()).to.equal(3);
-
-    // If it then emits a value the next one shouldn't shut down.
-    runnerData.push('bob');
-    valueEmitter.emit('value');
-
-    // Wait a couple of ticks to be sure.
-    await new Promise(resolve => setTimeout(resolve, 10));
-    expect(buffer.getInstanceCount()).to.equal(3);
-
-    // Scale down again
-    runnerData.push(undefined);
-    valueEmitter.emit('value');
-
-    await new Promise(resolve => buffer.once('scale', resolve));
-    expect(buffer.getInstanceCount()).to.equal(2);
+      await new Promise(resolve => buffer.once('scale', resolve));
+      expect(buffer.getInstanceCount()).to.equal(2);
+    });
   });
 });

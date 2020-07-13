@@ -180,7 +180,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
 
     this.scaling = true;
     try {
-      const instance = await Promise.resolve(this.createCallback());
+      const instance = await this.createInstance();
       this.instanceList.push({
         instance,
       });
@@ -190,6 +190,14 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     } finally {
       this.scaling = false;
       this.emit('scale', this.instanceList.length);
+    }
+  }
+
+  private createInstance(): Promise<T> {
+    try {
+      return Promise.resolve(this.createCallback());
+    } catch (err) {
+      return Promise.reject(err);
     }
   }
 
