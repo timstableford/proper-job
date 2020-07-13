@@ -37,96 +37,110 @@ For more examples then the below such as using the scaling connection pool or po
 
 ### Simple Iteration
 
-```
+```javascript
 const execute = require('proper-job').execute;
 // Or in TypeScript, import { execute } from 'proper-job';
 
 async function main() {
-    const things = ['thing1', 10, 20, 30, 40, 50, 'thing2'];
-    const results = await execute(things, value => {
-        // Do some stuff
-        return Promise.resolve(`${value} done`);
-    }, {
-        parallel: 2 // The number of promises to run in parallel.
-    })
-    console.log(results);
+  const things = ['thing1', 10, 20, 30, 40, 50, 'thing2'];
+  const results = await execute(
+    things,
+    value => {
+      // Do some stuff
+      return Promise.resolve(`${value} done`);
+    },
+    {
+      parallel: 2, // The number of promises to run in parallel.
+    },
+  );
+  console.log(results);
 }
 
 main().catch(err => {
-    console.error(err);
-    process.exit(1);
+  console.error(err);
+  process.exit(1);
 });
 ```
 
 ### Iteration with init
 
-```
+```javascript
 const execute = require('proper-job').execute;
 // Or in TypeScript, import { execute } from 'proper-job';
 
 async function main() {
-    const results = await execute(async () => {
-        // Do some async thing.
-        await new Promise(resolve => setTimeout(resolve, 100));
-        // Then return an object with the init field.
-        return {
-            init: 'Some arbitrary init data, can be an object',
-            iterable: [1, 2, 4]
-        };
-    }, (value, init) => {
-        // Do some processing.
-        // init is set to the same value as returned above.
-        return Promise.resolve(`${init} ${value} done`);
-    }, {
-        parallel: 2 // The number of promises to run in parallel.
-    })
-    console.log(results);
+  const results = await execute(
+    async () => {
+      // Do some async thing.
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // Then return an object with the init field.
+      return {
+        init: 'Some arbitrary init data, can be an object',
+        iterable: [1, 2, 4],
+      };
+    },
+    (value, init) => {
+      // Do some processing.
+      // init is set to the same value as returned above.
+      return Promise.resolve(`${init} ${value} done`);
+    },
+    {
+      parallel: 2, // The number of promises to run in parallel.
+    },
+  );
+  console.log(results);
 }
 
 main().catch(err => {
-    console.error(err);
-    process.exit(1);
+  console.error(err);
+  process.exit(1);
 });
 ```
 
 ### Iterating on a stream
 
-```
+```javascript
 const ProperJob = require('proper-job');
 
 const execute = ProperJob.execute;
 const AsyncBuffer = ProperJob.AsyncBuffer;
 
 async function main() {
-    const buffer = new AsyncBuffer();
+  const buffer = new AsyncBuffer();
 
-    console.time('Execution Complete');
+  console.time('Execution Complete');
 
-    execute(buffer, async value => {
-        // Do some async thing on your value.
-        console.log(value);
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }, {
-        parallel: 10 // The number of promises to run in parallel.
-    }).then(() => {
-        console.timeEnd('Execution Complete');
-    }).catch(err => {
-        console.error('Execution failed', err);
+  execute(
+    buffer,
+    async value => {
+      // Do some async thing on your value.
+      console.log(value);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    },
+    {
+      parallel: 10, // The number of promises to run in parallel.
+    },
+  )
+    .then(() => {
+      console.timeEnd('Execution Complete');
+    })
+    .catch(err => {
+      console.error('Execution failed', err);
     });
 
-    // Now push all your items as they're received. This will block until
-    // the queue is within it's maximum size.
-    for (let i = 0; i < 10; i++) {
-        await buffer.push(i);
-    }
+  // Now push all your items as they're received. This will block until
+  // the queue is within it's maximum size.
+  for (let i = 0; i < 10; i++) {
+    await buffer.push(i);
+  }
 
-    // Finally to cause the executor to quit, gracefully draining the queue.
-    await buffer.quit();
+  // Finally to cause the executor to quit, gracefully draining the queue.
+  await buffer.quit();
 }
 
 main().catch(err => {
-    console.error(err);
-    process.exit(1);
+  console.error(err);
+  process.exit(1);
 });
 ```
 
