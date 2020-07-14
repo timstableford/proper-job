@@ -135,6 +135,14 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     return this.instanceList.length;
   }
 
+  public getMinInstances(): number {
+    return this.options.minInstances;
+  }
+
+  public getMaxInstances(): number {
+    return this.options.maxInstances;
+  }
+
   public async scaleDown(): Promise<void> {
     if (this.instanceList.length <= this.options.minInstances || this.scaling) {
       return;

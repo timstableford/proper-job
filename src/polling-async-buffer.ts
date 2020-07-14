@@ -76,7 +76,7 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
       const result = await instance.fetch();
       // If no result then don't claim the next instance.
       // This allows it to be reaped.
-      if (result === undefined) {
+      if (result === undefined && this.pool.getInstanceCount() > this.pool.getMinInstances()) {
         this.ignoreNext = true;
       }
       return result;
@@ -86,6 +86,7 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
     // That means scaling down should work fine.
     if (res === undefined) {
       this.resultCount = 0;
+      // Won't do anything if already at the minimum.
       await this.pool.scaleDown();
     } else {
       this.resultCount = this.resultCount + 1;
