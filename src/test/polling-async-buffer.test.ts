@@ -177,5 +177,45 @@ describe('Polling Async Buffer tests', () => {
       await new Promise(resolve => buffer.once('scale', resolve));
       expect(buffer.getInstanceCount()).to.equal(2);
     });
+
+    it('Recive data, idle and then receive more data', async () => {
+      {
+        const resPromise = buffer.pop();
+        runnerData.push('bob');
+        valueEmitter.emit('value');
+        expect(await resPromise).to.equal('bob');
+      }
+
+      // Simulate timeout for a while
+      for (let i = 0; i < 10; i++) {
+        runnerData.push(undefined);
+        valueEmitter.emit('value');
+      }
+
+      // Receive further data
+      {
+        const resPromise = buffer.pop();
+        runnerData.push('jeff');
+        valueEmitter.emit('value');
+        expect(await resPromise).to.equal('jeff');
+      }
+    });
+
+    it('Idle and then receive data', async () => {
+      // Simulate timeout for a while
+      for (let i = 0; i < 1000; i++) {
+        runnerData.push(undefined);
+        valueEmitter.emit('value');
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      // Receive further data
+      {
+        const resPromise = buffer.pop();
+        runnerData.push('jeff');
+        valueEmitter.emit('value');
+        expect(await resPromise).to.equal('jeff');
+      }
+    });
   });
 });

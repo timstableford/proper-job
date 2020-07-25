@@ -135,6 +135,10 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     return this.instanceList.length;
   }
 
+  public isScaling(): boolean {
+    return this.scaling;
+  }
+
   public getMinInstances(): number {
     return this.options.minInstances;
   }
