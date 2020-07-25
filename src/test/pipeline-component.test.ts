@@ -13,12 +13,13 @@ it('Test using library components as a pipeline component', async () => {
       return Promise.resolve();
     }
 
-    public async fetch(): Promise<undefined | number> {
+    public async fetch(): Promise<undefined | number[]> {
       await new Promise(resolve => setTimeout(resolve, 5));
       while (runnerData.length === 0) {
         await new Promise(resolve => valueEmitter.once('value', resolve));
       }
-      return runnerData.shift();
+      const element = runnerData.shift();
+      return element !== undefined ? [element] : undefined;
     }
   }
 

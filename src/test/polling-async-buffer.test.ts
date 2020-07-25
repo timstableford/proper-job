@@ -23,7 +23,7 @@ describe('Polling Async Buffer tests', () => {
       return Promise.resolve();
     }
 
-    public async fetch(): Promise<undefined | string> {
+    public async fetch(): Promise<undefined | string[]> {
       // eslint-disable-next-line no-unmodified-loop-condition
       while (runnerData.length === 0 && !fetchError) {
         await new Promise(resolve => valueEmitter.once('value', resolve));
@@ -33,7 +33,8 @@ describe('Polling Async Buffer tests', () => {
         fetchError = undefined;
         throw err;
       }
-      return runnerData.shift();
+      const element = runnerData.shift();
+      return element !== undefined ? [element] : undefined;
     }
   }
 

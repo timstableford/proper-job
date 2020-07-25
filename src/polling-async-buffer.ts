@@ -84,7 +84,7 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
       // If no result then don't claim the next instance.
       // This allows it to be reaped.
       if (
-        result === undefined &&
+        (result === undefined || result.length === 0) &&
         this.pool.getInstanceCount() > this.pool.getMinInstances() &&
         !this.pool.isScaling()
       ) {
@@ -93,9 +93,14 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
       return result;
     });
 
+    if (res !== undefined && !Array.isArray(res)) {
+      this.emit('error', new Error(`Popped non-array element: ${res}`));
+      return;
+    }
+
     // At this point available has been emitted but it has been ignored.
     // That means scaling down should work fine.
-    if (res === undefined) {
+    if (res === undefined || res.length === 0) {
       this.resultCount = 0;
       // Won't do anything if already at the minimum.
       await this.pool.scaleDown();
@@ -103,7 +108,9 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
       this.resultCount = this.resultCount + 1;
       // Afterwards (so as not to keep the polling instance longer than necessary...)
       // push it into the queue.
-      await this.push(res);
+      for (const element of res) {
+        await this.push(element);
+      }
     }
 
     // If twice as many callbacks as the number of instances has returned a non-undefined

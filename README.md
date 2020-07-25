@@ -265,4 +265,4 @@ This class is used when to parallelise blocking pops from a queue. For example w
 An abstract class with the following methods.
 
 - `quit` - Returns a `Promise<void>`.
-- `fetch` - Returns a `Promise<T | undefined>`. This is assumed to be a function that returns a value when it's available and on timeout returns undefined.
+- `fetch` - Returns a `Promise<T[] | undefined>`. This is assumed to be a function that returns an array of values when it's available and on timeout returns undefined. Returning an empty array is also treated as undefined. If more elements are popped than the available buffer size then the buffer will not poll again until there's space.
