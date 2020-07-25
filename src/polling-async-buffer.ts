@@ -23,8 +23,15 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
 
     // Listeners removed when pool quit is called.
     this.pool.on('available', () => {
-      if (!this.ignoreNext && this.pollingRunning) {
-        this.ignoreNext = false;
+      // Be extra safe and make sure never to scale too low.
+      const ignoreNext =
+        this.ignoreNext && this.pool.getInstanceCount() > this.pool.getMinInstances();
+      this.ignoreNext = false;
+      if (ignoreNext) {
+        return;
+      }
+
+      if (this.pollingRunning) {
         this.poll().catch(err => {
           this.pool.emit('error', err);
         });
