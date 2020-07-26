@@ -5,9 +5,9 @@ import { ScalingConnectionPool } from './scaling-connection-pool';
 
 export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
   public readonly pool: ScalingConnectionPool<PollingConnectionPoolRunner<T>>;
-  private ignoreNext = false;
   private resultCount = 0;
   private pollingRunning = true;
+  private runningCount = 0;
 
   public constructor(
     createCallback: CreatePollingRunnerCallback<T>,
@@ -23,23 +23,24 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
 
     // Listeners removed when pool quit is called.
     this.pool.on('available', () => {
-      // Be extra safe and make sure never to scale too low.
-      const ignoreNext =
-        this.ignoreNext && this.pool.getInstanceCount() > this.pool.getMinInstances();
-      this.ignoreNext = false;
-      if (ignoreNext) {
-        return;
-      }
-
       if (this.pollingRunning) {
-        this.poll().catch(err => {
-          this.pool.emit('error', err);
-        });
+        this.runningCount = this.runningCount + 1;
+        this.poll()
+          .catch(err => {
+            this.pool.emit('error', err);
+          })
+          .finally(() => {
+            this.runningCount = this.runningCount - 1;
+          });
       }
     });
 
     this.pool.on('scale', () => this.emit('scale'));
     this.pool.on('error', err => this.emit('error', err));
+  }
+
+  public getRunningCount(): number {
+    return this.runningCount;
   }
 
   public getInstanceCount(): number {
@@ -79,18 +80,16 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
     // Why not just push inside the callback below you may think, well
     // push is a blocking call which will mean the pool thinks it's fully utilised
     // waiting for the buffer to empty.
+    let killedInstance: PollingConnectionPoolRunner<T> | undefined = undefined;
     const res = await this.pool.run(async instance => {
-      const result = await instance.fetch();
-      // If no result then don't claim the next instance.
-      // This allows it to be reaped.
-      if (
-        (result === undefined || result.length === 0) &&
-        this.pool.getInstanceCount() > this.pool.getMinInstances() &&
-        !this.pool.isScaling()
-      ) {
-        this.ignoreNext = true;
+      const internalRes = await instance.fetch();
+      // If we need to scale down then mark this specific instance as quitting so when
+      // it's released it's not made available.
+      if (internalRes === undefined || (internalRes.length === 0 && !this.pool.isScaling())) {
+        // Only returns an instance of the running count > the minimum.
+        killedInstance = this.pool.killRunner(instance);
       }
-      return result;
+      return internalRes;
     });
 
     if (res !== undefined && !Array.isArray(res)) {
@@ -101,10 +100,14 @@ export class PollingAsyncBuffer<T> extends AsyncBuffer<T> {
     // At this point available has been emitted but it has been ignored.
     // That means scaling down should work fine.
     if (res === undefined || res.length === 0) {
-      this.resultCount = 0;
-      // Won't do anything if already at the minimum.
-      await this.pool.scaleDown();
+      if (killedInstance) {
+        // Reset counter for scaling up.
+        this.resultCount = 0;
+        // Won't do anything if already at the minimum. Blocks until instance is released.
+        await this.pool.scaleDown(killedInstance);
+      }
     } else {
+      // Used for scaling up.
       this.resultCount = this.resultCount + 1;
       // Afterwards (so as not to keep the polling instance longer than necessary...)
       // push it into the queue.

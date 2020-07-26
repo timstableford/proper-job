@@ -176,7 +176,10 @@ describe('Polling Async Buffer tests', () => {
       valueEmitter.emit('value');
 
       await new Promise(resolve => buffer.once('scale', resolve));
+      // Wait a tick for the running count to update.
+      await new Promise(resolve => setTimeout(resolve, 0));
       expect(buffer.getInstanceCount()).to.equal(2);
+      expect(buffer.getRunningCount()).to.equal(2);
     });
 
     it('Recive data, idle and then receive more data', async () => {

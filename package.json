@@ -1,6 +1,6 @@
 {
   "name": "proper-job",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Asyncronous task parallel batcher",
   "repository": "https://github.com/timstableford/proper-job",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
   "license": "MIT",
   "scripts": {
     "build": "tsc -p .",
-    "clean": "rm -r dist tsconfig.tsbuildinfo",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "lint": "./node_modules/@luvies/config/scripts/lint.sh",
     "fix": "./node_modules/@luvies/config/scripts/lint.sh fix",
     "test": "mocha --exit --recursive dist/test"

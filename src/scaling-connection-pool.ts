@@ -20,6 +20,7 @@ const DEFAULT_OPTIONS: ConnectionPoolOptionsInternal = {
 interface InstanceWrapper<T extends ConnectionPoolRunner> {
   claimed?: number;
   instance?: T;
+  quitting?: boolean;
 }
 
 export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends EventEmitter {
@@ -82,7 +83,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
         // Released and available because available is also happens
         // when a new instace is created.
         this.emit('released');
-        if (!this.quitting) {
+        if (!this.quitting && !instanceWrapper.quitting) {
           this.emit('available');
         }
         return;
@@ -106,7 +107,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     }
 
     // Wait for any claims to complete.
-    while (this.getInstanceCount() > 0) {
+    while (this.instanceList.length > 0) {
       const unusedIndex = this.instanceList.findIndex(
         instance => instance.claimed === undefined && instance.instance,
       );
@@ -147,20 +148,47 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     return this.options.maxInstances;
   }
 
-  public async scaleDown(): Promise<void> {
-    if (this.instanceList.length <= this.options.minInstances || this.scaling) {
+  public killRunner(inputInstance?: T): T | undefined {
+    const runningInstances = this.instanceList.filter(instance => !instance.quitting);
+    if (runningInstances.length <= this.options.minInstances) {
+      return undefined;
+    }
+
+    const unused =
+      this.instanceList.find(wrapper => {
+        return inputInstance !== undefined
+          ? inputInstance === wrapper.instance
+          : wrapper.claimed === undefined && wrapper.instance;
+      }) || runningInstances[0];
+
+    unused.quitting = true;
+
+    return unused.instance;
+  }
+
+  public async scaleDown(instance?: T): Promise<void> {
+    while (this.scaling && !this.quitting) {
+      await new Promise(resolve => this.once('scale', resolve));
+    }
+    if (this.quitting) {
       return;
     }
 
     this.scaling = true;
 
     try {
-      const unused = this.instanceList.find(
-        instance => instance.claimed === undefined && instance.instance,
-      );
-
-      if (!unused) {
+      const unusedInstance = instance || this.killRunner();
+      if (!unusedInstance) {
         return;
+      }
+      const unused = this.instanceList.find(wrapper => wrapper.instance === unusedInstance);
+      if (!unused) {
+        throw new Error('Could not find given instance in list');
+        return;
+      }
+
+      while (unused.claimed !== undefined) {
+        await new Promise(resolve => this.once('released', resolve));
       }
 
       const index = this.instanceList.findIndex(instanceWrapper => instanceWrapper === unused);
