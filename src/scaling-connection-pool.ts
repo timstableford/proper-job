@@ -23,6 +23,15 @@ interface InstanceWrapper<T extends ConnectionPoolRunner> {
   quitting?: boolean;
 }
 
+interface PendingClaim<T extends ConnectionPoolRunner> {
+  resolve: (instanceWrapper: InstanceWrapper<T>) => void;
+}
+
+interface QueueItem<T> {
+  next?: QueueItem<T>;
+  data: T;
+}
+
 export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends EventEmitter {
   protected quitting = false;
 
@@ -32,6 +41,8 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
   private runTime = 0;
   private scaleInterval?: NodeJS.Timer;
   private scaling = false;
+  private pendingClaimFirst?: QueueItem<PendingClaim<T>>;
+  private pendingClaimLast?: QueueItem<PendingClaim<T>>;
 
   public constructor(createCallback: CreateRunnerCallback<T>, options?: ConnectionPoolOptions) {
     super();
@@ -43,15 +54,26 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
       ...(options || {}),
     };
 
-    // All them once's everywhere can add up to more than the default 10.
-    this.setMaxListeners(this.options.maxInstances * 4);
-
     if (this.options.autoScale) {
       this.scaleInterval = setInterval(() => this.scaleTick(), this.options.scaleInterval);
     }
 
     // Start a scale on the next loop. This allows subscribing to the initial available event.
     setTimeout(() => this.scaleTick(), 0);
+
+    this.on('available', (instanceWrapper: InstanceWrapper<T>) => {
+      if (this.pendingClaimFirst) {
+        try {
+          this.pendingClaimFirst.data.resolve(instanceWrapper);
+        } catch (err) {
+          this.emit('error', err);
+        }
+        if (this.pendingClaimFirst === this.pendingClaimLast) {
+          this.pendingClaimLast = undefined;
+        }
+        this.pendingClaimFirst = this.pendingClaimFirst.next;
+      }
+    });
   }
 
   public async run<V = void>(callback: ClaimCallback<T, V>): Promise<V> {
@@ -84,7 +106,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
         // when a new instace is created.
         this.emit('released');
         if (!this.quitting && !instanceWrapper.quitting) {
-          this.emit('available');
+          this.emit('available', instanceWrapper);
         }
         return;
       }
@@ -221,10 +243,11 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     this.scaling = true;
     try {
       const instance = await this.createInstance();
-      this.instanceList.push({
+      const wrapper = {
         instance,
-      });
-      this.emit('available');
+      };
+      this.instanceList.push(wrapper);
+      this.emit('available', wrapper);
     } catch (err) {
       this.emit('error', err);
     } finally {
@@ -285,33 +308,48 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
   }
 
   private async waitForClaim(): Promise<T> {
-    let instanceWrapper: InstanceWrapper<T> | undefined = undefined;
-    do {
-      // Try to find an instance that has not been claimed.
-      instanceWrapper = this.instanceList.find(
-        instance => instance.claimed === undefined && instance.instance,
-      );
-      if (instanceWrapper) {
-        if (!instanceWrapper.instance) {
-          throw new Error('Managed to claim an uninstantiated instance');
-        }
-        instanceWrapper.claimed = Date.now();
-        return instanceWrapper.instance;
-      } else if (
-        this.instanceList.length < this.options.maxInstances &&
-        this.options.responsiveScale &&
-        this.options.autoScale
-      ) {
-        // If it's possible to scale up now, then do so and then repeat the loop
-        // without waiting for one to be available.
-        await this.scaleUp();
-        continue;
+    // Try to find an instance that has not been claimed.
+    const instanceWrapper = this.instanceList.find(
+      instance => instance.claimed === undefined && instance.instance,
+    );
+
+    if (instanceWrapper) {
+      if (!instanceWrapper.instance) {
+        throw new Error('Managed to claim an uninstantiated instance');
       }
+      instanceWrapper.claimed = Date.now();
+      return instanceWrapper.instance;
+    }
 
-      // So when an instance is created or when one's released.
-      await new Promise(resolve => this.once('available', resolve));
-    } while (instanceWrapper === undefined);
+    // When an instance is created or when one's released.
+    const pendingClaimPromise = new Promise<InstanceWrapper<T>>(resolve => {
+      const item = { data: { resolve } };
+      if (this.pendingClaimLast) {
+        this.pendingClaimLast.next = item;
+        this.pendingClaimLast = item;
+      } else {
+        this.pendingClaimFirst = item;
+        this.pendingClaimLast = item;
+      }
+    });
 
-    throw new Error('Returning from claiming without an instance');
+    if (
+      !instanceWrapper &&
+      this.instanceList.length < this.options.maxInstances &&
+      this.options.responsiveScale &&
+      this.options.autoScale
+    ) {
+      // If it's possible to scale up now, then do so and then repeat the loop
+      // without waiting for one to be available.
+      await this.scaleUp();
+    }
+
+    return pendingClaimPromise.then(claimedInstanceWrapper => {
+      if (!claimedInstanceWrapper.instance) {
+        throw new Error('Managed to claim an uninstantiated instance');
+      }
+      claimedInstanceWrapper.claimed = Date.now();
+      return claimedInstanceWrapper.instance;
+    });
   }
 }
