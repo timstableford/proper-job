@@ -191,6 +191,18 @@ describe('Scaling Connection Pool Tests', () => {
       expect(pool.getInstanceCount()).to.equal(2);
     });
 
+    it('Cannot scale below minimum instance', async () => {
+      while (pool.getInstanceCount() < 2) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+      expect(pool.getInstanceCount()).to.equal(2);
+
+      await pool.scaleDown();
+      await pool.scaleDown();
+
+      expect(pool.getInstanceCount()).to.equal(2);
+    });
+
     it('Scale up and stay there', async () => {
       while (pool.getInstanceCount() < 2) {
         await new Promise(resolve => pool.once('scale', resolve));

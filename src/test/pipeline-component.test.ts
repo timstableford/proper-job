@@ -6,7 +6,7 @@ import { PollingAsyncBuffer, PollingConnectionPoolRunner, execute } from '../';
 
 it('Test using library components as a pipeline component', async () => {
   const valueEmitter = new EventEmitter();
-  const runnerData: Array<number | undefined> = [];
+  const runnerData: Array<number | undefined | null> = [];
 
   class Runner implements PollingConnectionPoolRunner<number> {
     public quit(): Promise<void> {
@@ -19,6 +19,9 @@ it('Test using library components as a pipeline component', async () => {
         await new Promise(resolve => valueEmitter.once('value', resolve));
       }
       const element = runnerData.shift();
+      if (element === null) {
+        return [];
+      }
       return element !== undefined ? [element] : undefined;
     }
   }
@@ -42,6 +45,8 @@ it('Test using library components as a pipeline component', async () => {
 
   for (let i = 0; i < 100; i++) {
     runnerData.push(i);
+    valueEmitter.emit('value');
+    runnerData.push(null);
     valueEmitter.emit('value');
   }
 
