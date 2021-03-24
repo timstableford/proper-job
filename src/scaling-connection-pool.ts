@@ -43,6 +43,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
   private scaling = false;
   private pendingClaimFirst?: QueueItem<PendingClaim<T>>;
   private pendingClaimLast?: QueueItem<PendingClaim<T>>;
+  private pendingClaimCount = 0;
 
   public constructor(createCallback: CreateRunnerCallback<T>, options?: ConnectionPoolOptions) {
     super();
@@ -72,6 +73,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
           this.pendingClaimLast = undefined;
         }
         this.pendingClaimFirst = this.pendingClaimFirst.next;
+        this.pendingClaimCount--;
       }
     });
   }
@@ -84,6 +86,15 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     } finally {
       this.release(claimed);
     }
+  }
+
+  public getPendingClaimCount(): number {
+    // Recover from errors if necessary.
+    if (this.pendingClaimCount < 0) {
+      this.pendingClaimCount = 0;
+      this.emit('error', new Error('Pending claim count went below 0'));
+    }
+    return this.pendingClaimCount;
   }
 
   public claim(): Promise<T> {
@@ -331,6 +342,7 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
         this.pendingClaimFirst = item;
         this.pendingClaimLast = item;
       }
+      this.pendingClaimCount++;
     });
 
     if (
