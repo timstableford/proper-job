@@ -125,6 +125,16 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     throw new Error('Unable to match instance to release it');
   }
 
+  public remove(instance: T): void {
+    const index = this.instanceList.findIndex(
+      instanceWrapper => instanceWrapper.instance === instance,
+    );
+    if (index >= 0) {
+      this.instanceList.splice(index, 1);
+      this.emit('scale', this.instanceList.length);
+    }
+  }
+
   public async quit(): Promise<void> {
     // Stop any new claims
     this.quitting = true;
