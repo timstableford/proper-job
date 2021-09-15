@@ -139,7 +139,12 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
       await new Promise(resolve => this.once('scale', resolve));
     }
 
-    // Wait for any claims to complete.
+    // Wait for pending claims to resolve
+    while (this.pendingClaimCount > 0) {
+      await new Promise(resolve => this.once('released', resolve));
+    }
+
+    // Wait for any ongoing claims to complete.
     while (this.instanceList.length > 0) {
       const unusedIndex = this.instanceList.findIndex(
         instance => instance.claimed === undefined && instance.instance,
