@@ -61,6 +61,21 @@ describe('Scaling Connection Pool Tests', () => {
       expect(pool.getInstanceCount(), 'Instance count 0 after shutdown').to.equal(0);
     });
 
+    it('Recover from removing only instnace', async () => {
+      while (pool.getInstanceCount() < 1) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+
+      const claimed = await pool.claim();
+      pool.remove(claimed);
+      expect(pool.getInstanceCount()).to.equal(0);
+
+      while (pool.getInstanceCount() < 1) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+      expect(pool.getInstanceCount()).to.be.above(0);
+    });
+
     it('Simple usage', async () => {
       const res = await pool.run(instance => {
         expect(instance).to.be.an('object');
