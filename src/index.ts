@@ -140,48 +140,52 @@ class ParallelExecutor<K, V, T> {
     if (this.filling) {
       return;
     }
-    this.filling = true;
 
-    this.fillPromise()
-      .then(() => (this.filling = false))
-      .catch(err => {
-        this.results.errors.push(err);
-        this.options.continueOnError = false;
-        this.filling = false;
-        this.fill();
-      });
+    this.fillPromise().catch(err => {
+      this.results.errors.push(err);
+      this.options.continueOnError = false;
+      this.fill();
+    });
   }
 
   private async fillPromise(): Promise<void> {
-    const parallel = this.options.parallel || DEFAULT_CONFIG.parallel;
-    const continueOnError = conf(DEFAULT_CONFIG.continueOnError, this.options.continueOnError);
-    const shouldContinue =
-      (continueOnError || this.results.errors.length === 0) && !this.results.aborted;
+    // This must be done in here because otherwise filling may not be set
+    // to false the enter time fill is entered if the result promises
+    // resolve in just the right way to trigger a race condition.
+    this.filling = true;
+    try {
+      const parallel = this.options.parallel || DEFAULT_CONFIG.parallel;
+      const continueOnError = conf(DEFAULT_CONFIG.continueOnError, this.options.continueOnError);
+      const shouldContinue =
+        (continueOnError || this.results.errors.length === 0) && !this.results.aborted;
 
-    if (shouldContinue) {
-      while (this.running < parallel && this.iterator) {
-        const iteratorValue = await Promise.resolve(this.iterator.next());
-        if (iteratorValue.done) {
-          // If done clear the iterator so it won't keep filling when there's a race condition.
-          this.iterator = undefined;
-          break;
+      if (shouldContinue) {
+        while (this.running < parallel && this.iterator) {
+          const iteratorValue = await Promise.resolve(this.iterator.next());
+          if (iteratorValue.done) {
+            // If done clear the iterator so it won't keep filling when there's a race condition.
+            this.iterator = undefined;
+            break;
+          }
+          this.wrap(this.start(iteratorValue.value));
         }
-        this.wrap(this.start(iteratorValue.value));
       }
-    }
 
-    if (this.running === 0) {
-      if (this.options.teardown) {
-        try {
-          await this.options.teardown(this.init);
-        } catch (err) {
-          this.results.errors.push(err);
-        } finally {
+      if (this.running === 0) {
+        if (this.options.teardown) {
+          try {
+            await this.options.teardown(this.init);
+          } catch (err) {
+            this.results.errors.push(err);
+          } finally {
+            this.finish();
+          }
+        } else {
           this.finish();
         }
-      } else {
-        this.finish();
       }
+    } finally {
+      this.filling = false;
     }
   }
 
