@@ -65,8 +65,11 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     this.on('available', (instanceWrapper: InstanceWrapper<T>) => {
       if (this.pendingClaimFirst) {
         try {
+          instanceWrapper.claimed = Date.now();
           this.pendingClaimFirst.data.resolve(instanceWrapper);
         } catch (err) {
+          instanceWrapper.claimed = undefined;
+          this.emit('available', instanceWrapper);
           this.emit('error', err);
         }
         if (this.pendingClaimFirst === this.pendingClaimLast) {
@@ -375,7 +378,6 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
       if (!claimedInstanceWrapper.instance) {
         throw new Error('Managed to claim an uninstantiated instance');
       }
-      claimedInstanceWrapper.claimed = Date.now();
       return claimedInstanceWrapper.instance;
     });
   }
