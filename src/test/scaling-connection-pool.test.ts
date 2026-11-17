@@ -274,4 +274,119 @@ describe('Scaling Connection Pool Tests', () => {
       expect(pool.getClaimedCount()).to.equal(0);
     });
   });
+
+  describe('Removal and shutdown', () => {
+    let pool: ScalingConnectionPool<Runner>;
+
+    // Fails rather than hangs if the promise never settles.
+    async function within<V>(promise: Promise<V>, ms: number, what: string): Promise<V> {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`${what} did not settle within ${ms}ms`)),
+              ms,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    }
+
+    async function waitForInstances(count: number): Promise<void> {
+      while (pool.getInstanceCount() < count) {
+        await new Promise(resolve => pool.once('scale', resolve));
+      }
+    }
+
+    beforeEach(() => {
+      pool = new ScalingConnectionPool(() => new Runner(), {
+        minInstances: 1,
+        maxInstances: 2,
+        autoScale: false,
+        responsiveScale: false,
+      });
+    });
+
+    afterEach(async () => {
+      await within(pool.quit(), 1000, 'quit');
+      expect(pool.getInstanceCount(), 'Instance count 0 after shutdown').to.equal(0);
+    });
+
+    it('Removing a claimed instance does not stop scaling', async () => {
+      await waitForInstances(1);
+      await pool.scaleUp();
+      const first = await pool.claim();
+      const second = await pool.claim();
+
+      // Scaling down a claimed instance waits for it to be released.
+      const scaleDown = pool.scaleDown(first);
+      expect(pool.isScaling()).to.equal(true);
+      pool.remove(first);
+
+      await within(scaleDown, 500, 'scaleDown');
+      expect(pool.isScaling()).to.equal(false);
+      expect(destroyed, 'the instance that was removed is not quit by the pool').to.equal(0);
+
+      await within(pool.scaleUp(), 500, 'scaleUp');
+      expect(pool.getInstanceCount()).to.equal(2);
+      pool.release(second);
+    });
+
+    it('Quit waits for a claimed instance that is removed', async () => {
+      await waitForInstances(1);
+      const claimed = await pool.claim();
+
+      const quit = pool.quit();
+      pool.remove(claimed);
+
+      await within(quit, 500, 'quit');
+    });
+
+    it('Quit serves claims made before it was called', async () => {
+      await waitForInstances(1);
+      const first = await pool.claim();
+      const pending = pool.claim();
+
+      const quit = pool.quit();
+      pool.release(first);
+      const second = await within(pending, 500, 'pending claim');
+      expect(second).to.equal(first);
+      pool.release(second);
+
+      await within(quit, 500, 'quit');
+    });
+
+    it('Quit rejects claims when there are no instances to serve them', async () => {
+      const failing = new ScalingConnectionPool<Runner>(
+        () =>
+          new Promise<Runner>((_resolve, reject) => {
+            setTimeout(() => reject(new Error('Test Error')), 10);
+          }),
+        { minInstances: 1, maxInstances: 1, autoScale: false, responsiveScale: false },
+      );
+      failing.on('error', () => {
+        // Expected, every instance fails to create.
+      });
+
+      const pending = failing.claim();
+      const quit = failing.quit();
+
+      let claimError: Error | undefined;
+      try {
+        await within(pending, 500, 'pending claim');
+      } catch (err) {
+        claimError = err;
+      }
+      expect(claimError && claimError.message).to.equal(
+        'Pool quit before an instance was available',
+      );
+      await within(quit, 500, 'quit');
+    });
+  });
 });

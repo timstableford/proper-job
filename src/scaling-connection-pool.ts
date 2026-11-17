@@ -25,6 +25,7 @@ interface InstanceWrapper<T extends ConnectionPoolRunner> {
 
 interface PendingClaim<T extends ConnectionPoolRunner> {
   resolve: (instanceWrapper: InstanceWrapper<T>) => void;
+  reject: (err: Error) => void;
 }
 
 interface QueueItem<T> {
@@ -119,7 +120,9 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
         // Released and available because available is also happens
         // when a new instace is created.
         this.emit('released');
-        if (!this.quitting && !instanceWrapper.quitting) {
+        // While quitting, released instances still serve claims made before quit was called,
+        // as quit waits for them.
+        if (!instanceWrapper.quitting && (!this.quitting || this.pendingClaimFirst)) {
           this.emit('available', instanceWrapper);
         }
         return;
@@ -132,10 +135,21 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     const index = this.instanceList.findIndex(
       instanceWrapper => instanceWrapper.instance === instance,
     );
-    if (index >= 0) {
-      this.instanceList.splice(index, 1);
-      this.emit('scale', this.instanceList.length);
+    if (index < 0) {
+      return;
     }
+
+    const [instanceWrapper] = this.instanceList.splice(index, 1);
+    // A removed instance is never released, so anything waiting for it to be,
+    // such as scaleDown or quit, would wait forever.
+    if (instanceWrapper.claimed !== undefined) {
+      instanceWrapper.claimed = undefined;
+      this.emit('released');
+    }
+    if (this.quitting) {
+      this.rejectUnservableClaims();
+    }
+    this.emit('scale', this.instanceList.length);
   }
 
   public async quit(): Promise<void> {
@@ -152,7 +166,8 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
       await new Promise(resolve => this.once('scale', resolve));
     }
 
-    // Wait for pending claims to resolve
+    // Wait for pending claims to resolve, as instances are released.
+    this.rejectUnservableClaims();
     while (this.pendingClaimCount > 0) {
       await new Promise(resolve => this.once('released', resolve));
     }
@@ -243,9 +258,11 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
       }
 
       const index = this.instanceList.findIndex(instanceWrapper => instanceWrapper === unused);
-      if (index >= 0) {
-        this.instanceList.splice(index, 1);
+      if (index < 0) {
+        // Removed while waiting for it to be released, whoever removed it is responsible for it.
+        return;
       }
+      this.instanceList.splice(index, 1);
       if (!unused.instance) {
         throw new Error('Attempt to scale down uninstantiated instance');
       }
@@ -283,6 +300,21 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
       this.scaling = false;
       this.emit('scale', this.instanceList.length);
     }
+  }
+
+  /**
+   * When quitting no more instances are created, so with none left claims can't be served.
+   */
+  private rejectUnservableClaims(): void {
+    if (this.instanceList.length > 0) {
+      return;
+    }
+    while (this.pendingClaimFirst) {
+      this.pendingClaimFirst.data.reject(new Error('Pool quit before an instance was available'));
+      this.pendingClaimFirst = this.pendingClaimFirst.next;
+      this.pendingClaimCount--;
+    }
+    this.pendingClaimLast = undefined;
   }
 
   private createInstance(): Promise<T> {
@@ -351,8 +383,8 @@ export class ScalingConnectionPool<T extends ConnectionPoolRunner> extends Event
     }
 
     // When an instance is created or when one's released.
-    const pendingClaimPromise = new Promise<InstanceWrapper<T>>(resolve => {
-      const item = { data: { resolve } };
+    const pendingClaimPromise = new Promise<InstanceWrapper<T>>((resolve, reject) => {
+      const item = { data: { resolve, reject } };
       if (this.pendingClaimLast) {
         this.pendingClaimLast.next = item;
         this.pendingClaimLast = item;
